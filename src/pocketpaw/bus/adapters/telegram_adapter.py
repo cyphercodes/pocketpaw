@@ -58,8 +58,18 @@ class TelegramAdapter(BaseChannelAdapter):
         # Add Handlers
         self.app.add_handler(CommandHandler("start", self._handle_start))
         _cmds = (
-            "new", "sessions", "resume", "clear", "rename", "status", "delete",
-            "backend", "backends", "model", "tools", "help",
+            "new",
+            "sessions",
+            "resume",
+            "clear",
+            "rename",
+            "status",
+            "delete",
+            "backend",
+            "backends",
+            "model",
+            "tools",
+            "help",
         )
         for cmd_name in _cmds:
             self.app.add_handler(CommandHandler(cmd_name, self._handle_command))
@@ -236,7 +246,9 @@ class TelegramAdapter(BaseChannelAdapter):
 
         if chat_id not in self._buffers:
             # Send initial message (topic-aware)
-            real_chat_id, topic_id = self._parse_chat_id(chat_id) # Parse chat_id here to use for send_chat_action
+            real_chat_id, topic_id = self._parse_chat_id(
+                chat_id
+            )  # Parse chat_id here to use for send_chat_action
             await self.app.bot.send_chat_action(chat_id=real_chat_id, action=ChatAction.TYPING)
             # Send initial message (topic-aware)
             send_kwargs: dict[str, Any] = {"chat_id": real_chat_id, "text": "🧠 ..."}

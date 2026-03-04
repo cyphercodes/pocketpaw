@@ -2,8 +2,10 @@
 # Changes: Initial creation with comprehensive tool integration tests
 """Tests for browser tool integration."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from pocketpaw.tools.builtin.browser import BrowserTool
 from pocketpaw.tools.protocol import BaseTool
 

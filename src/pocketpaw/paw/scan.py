@@ -39,7 +39,6 @@ async def run_agent_scan(soul: Soul, project_path: Path, provider: str) -> None:
     Uses the configured LLM provider to intelligently scan the project,
     reading files and storing discoveries in the soul's memory.
     """
-    from pocketpaw.paw.tools import SoulRememberTool, SoulRecallTool
 
     prompt = SCAN_PROMPT.format(project_path=project_path)
 

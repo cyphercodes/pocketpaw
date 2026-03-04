@@ -33,7 +33,7 @@ try:
     import uvicorn
     from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import Response, JSONResponse
+    from fastapi.responses import JSONResponse, Response
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
 except ImportError as _exc:
@@ -1107,7 +1107,7 @@ async def save_identity(request: Request):
             status_code=400,
             content={"error": "Invalid JSON body"},
         )
-    
+
     identity_dir = get_config_path().parent / "identity"
     identity_dir.mkdir(parents=True, exist_ok=True)
 

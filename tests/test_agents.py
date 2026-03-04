@@ -217,7 +217,7 @@ class TestAgentRouter:
         info = router.get_backend_info()
         assert info is not None
         assert info.name == "claude_agent_sdk"
-        
+
     def test_router_get_backend_info_uses_fallback_backend(self):
         """When configured backend is invalid, info should reflect active fallback backend."""
         from pocketpaw.agents.router import AgentRouter
@@ -226,7 +226,6 @@ class TestAgentRouter:
         info = router.get_backend_info()
         assert info is not None
         assert info.name == "claude_agent_sdk"
-
 
     @pytest.mark.asyncio
     async def test_router_has_run_method(self):
