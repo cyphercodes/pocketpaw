@@ -92,7 +92,6 @@ async def test_executor_handles_agent_event_dataclass():
         patch("pocketpaw.mission_control.executor.get_message_bus", return_value=mock_bus),
         patch("pocketpaw.mission_control.executor.AgentRouter", return_value=mock_router),
         patch("pocketpaw.mission_control.executor.get_settings", return_value=MagicMock()),
-        patch("pocketpaw.mission_control.executor.Settings", return_value=MagicMock()),
     ):
         executor = MCTaskExecutor()
         result = await executor.execute_task(task_id, agent_id)
@@ -145,7 +144,6 @@ async def test_executor_handles_tool_use_metadata():
         patch("pocketpaw.mission_control.executor.get_message_bus", return_value=mock_bus),
         patch("pocketpaw.mission_control.executor.AgentRouter", return_value=mock_router),
         patch("pocketpaw.mission_control.executor.get_settings", return_value=MagicMock()),
-        patch("pocketpaw.mission_control.executor.Settings", return_value=MagicMock()),
     ):
         executor = MCTaskExecutor()
         result = await executor.execute_task(task_id, agent_id)
@@ -194,7 +192,6 @@ async def test_executor_handles_error_event():
         patch("pocketpaw.mission_control.executor.get_message_bus", return_value=mock_bus),
         patch("pocketpaw.mission_control.executor.AgentRouter", return_value=mock_router),
         patch("pocketpaw.mission_control.executor.get_settings", return_value=MagicMock()),
-        patch("pocketpaw.mission_control.executor.Settings", return_value=MagicMock()),
     ):
         executor = MCTaskExecutor()
         result = await executor.execute_task(task_id, agent_id)
