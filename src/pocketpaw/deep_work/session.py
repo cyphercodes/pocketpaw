@@ -1,5 +1,7 @@
 # Deep Work Session — project lifecycle orchestrator.
 # Created: 2026-02-12
+# Updated: 2026-03-09 — Expose retry_task() as public method so api.py doesn't
+#   reach into scheduler internals. Also used in approve/resume/recover.
 # Updated: 2026-02-26 — Deep Work v2: Added cancel() method for project cancellation.
 #   _materialize_tasks now copies max_retries and timeout_minutes from TaskSpec to Task.
 #   New broadcast: dw_project_cancelled. Cancel stops all running tasks and skips pending.
@@ -489,6 +491,14 @@ class DeepWorkSession:
 
         logger.info(f"Project cancelled: {project.title}")
         return project
+
+    async def retry_task(self, task) -> None:
+        """Re-dispatch a task for retry.
+
+        Public wrapper around the scheduler's internal dispatch so that
+        API callers don't need to reach into scheduler internals.
+        """
+        await self.scheduler._dispatch_task(task)
 
     # =========================================================================
     # MessageBus event handler

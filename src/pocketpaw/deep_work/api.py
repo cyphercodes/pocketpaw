@@ -1,5 +1,7 @@
 # Deep Work API endpoints.
 # Created: 2026-02-12
+# Updated: 2026-03-09 — Use session.retry_task() public method instead of
+#   reaching into scheduler._dispatch_task() directly.
 # Updated: 2026-02-26 — Deep Work v2: Added cancel and retry endpoints.
 #   POST /projects/{id}/cancel — cancel project, stop all tasks
 #   POST /projects/{id}/tasks/{tid}/retry — manual retry of a failed task
@@ -326,7 +328,7 @@ async def retry_task(project_id: str, task_id: str) -> dict[str, Any]:
     # Re-dispatch via scheduler
     try:
         session = get_deep_work_session()
-        await session.scheduler._dispatch_task(task)
+        await session.retry_task(task)
     except Exception as e:
         logger.warning(f"Re-dispatch after manual retry failed: {e}")
         raise HTTPException(status_code=500, detail=f"Retry dispatch failed: {e}")

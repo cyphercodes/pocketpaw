@@ -10,6 +10,9 @@ Design notes:
 - In-memory index loaded on first access
 - Atomic writes (write to temp file, then rename)
 - Singleton factory via get_kit_store()
+
+Updated: 2026-03-09 — Sanitize caller-supplied kit_id in install_kit()
+  and source param in save_kit_data() to prevent path traversal.
 """
 
 from __future__ import annotations
@@ -133,6 +136,11 @@ class FileKitStore:
         config = self._parse_yaml_string(yaml_str)
         if kit_id is None:
             kit_id = _slugify(config.meta.name)
+        else:
+            # Always sanitize caller-supplied kit_id to prevent path traversal
+            kit_id = re.sub(r"[^a-z0-9\-]", "", kit_id.lower())
+            if not kit_id:
+                raise ValueError("kit_id must contain at least one alphanumeric character")
 
         kit = InstalledKit(
             id=kit_id,
@@ -213,7 +221,9 @@ class FileKitStore:
         data_dir = self.base_dir / kit_id / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = source.replace(":", "_") + ".json"
+        # Sanitize source to prevent path traversal
+        safe_source = re.sub(r"[^a-z0-9_\-]", "_", source.lower())
+        filename = safe_source + ".json"
         file_path = data_dir / filename
         temp_path = file_path.with_suffix(".tmp")
         temp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

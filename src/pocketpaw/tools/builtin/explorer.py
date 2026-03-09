@@ -2,11 +2,17 @@
 #
 # Calls the dashboard REST API (POST /api/v1/files/open) so it works both
 # in-process (tool bridge) and from the CLI subprocess (Claude SDK via Bash).
+#
+# Updated: 2026-03-09 — Add path allowlist guard (home + cwd) to prevent
+#   traversal attacks. Audit-log every open attempt.
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from pocketpaw.tools.protocol import BaseTool
+
+logger = logging.getLogger(__name__)
 
 
 class OpenExplorerTool(BaseTool):
@@ -48,6 +54,21 @@ class OpenExplorerTool(BaseTool):
         """Open a path in the client's file explorer via the dashboard API."""
         try:
             resolved = Path(path).expanduser().resolve()
+
+            # Path allowlist guard — restrict to home directory or cwd
+            home = Path.home()
+            cwd = Path.cwd()
+            if not (
+                str(resolved).startswith(str(home))
+                or str(resolved).startswith(str(cwd))
+            ):
+                logger.warning(
+                    "open_in_explorer blocked path outside allowed dirs: %s", resolved
+                )
+                return self._error(f"Path outside allowed directories: {path}")
+
+            # Audit log every access attempt
+            logger.info("open_in_explorer: path=%s resolved=%s", path, resolved)
 
             if not resolved.exists():
                 return self._error(f"Path not found: {path}")
