@@ -169,7 +169,8 @@ class ClaudeSDKBackend:
             else:
                 logger.warning(
                     "⚠️ Claude Code CLI not found on PATH. "
-                    "Install with: npm install -g @anthropic-ai/claude-code"
+                    "Install with: npm install -g @anthropic-ai/claude-code "
+                    "and set ANTHROPIC_API_KEY, or switch to a different backend in Settings."
                 )
 
         except ImportError as e:
@@ -648,10 +649,14 @@ class ClaudeSDKBackend:
                 type="error",
                 content=(
                     "❌ Claude Code CLI not found on this machine.\n\n"
-                    "Install with: `npm install -g @anthropic-ai/claude-code`\n\n"
-                    "Or switch to **PocketPaw Native** backend in "
-                    "**Settings → General** — it uses the Anthropic API directly "
-                    "and doesn't need the CLI."
+                    "The Claude Agent SDK backend requires the CLI. To fix this:\n\n"
+                    "**Install Claude Code CLI:**\n"
+                    "- Windows: `irm https://claude.ai/install.ps1 | iex`\n"
+                    "- macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash`\n"
+                    "- Or: `npm install -g @anthropic-ai/claude-code`\n\n"
+                    "Then set your `ANTHROPIC_API_KEY` in **Settings → General**.\n\n"
+                    "Or switch to a different backend in **Settings → General** "
+                    "(OpenAI Agents, Google ADK, Codex, etc.) that doesn't need the CLI."
                 ),
             )
             return
@@ -1118,9 +1123,13 @@ class ClaudeSDKBackend:
                     type="error",
                     content=(
                         "❌ Claude Code CLI not found.\n\n"
-                        "Install with: npm install -g @anthropic-ai/claude-code\n\n"
-                        "Or switch to a different backend in "
-                        "**Settings → General**."
+                        "**Install Claude Code CLI:**\n"
+                        "- Windows: `irm https://claude.ai/install.ps1 | iex`\n"
+                        "- macOS/Linux: `curl -fsSL https://claude.ai/install.sh | bash`\n"
+                        "- Or: `npm install -g @anthropic-ai/claude-code`\n\n"
+                        "Then set your `ANTHROPIC_API_KEY` in **Settings → General**.\n\n"
+                        "Or switch to a different backend in **Settings → General** "
+                        "(OpenAI Agents, Google ADK, Codex, etc.)."
                     ),
                 )
             else:
