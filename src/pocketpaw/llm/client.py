@@ -392,7 +392,7 @@ def resolve_llm_client(
     )
 
 
-def resolve_backend_env(settings: Settings) -> None:
+def resolve_backend_env(settings: Settings, *, force: bool = False) -> None:
     """Push the correct environment variables for the active backend.
 
     This solves the problem where switching backends (e.g. from
@@ -401,32 +401,50 @@ def resolve_backend_env(settings: Settings) -> None:
     settings are resolved here and pushed to the env vars each
     backend's SDK expects.
 
-    Called once at startup (from ``__main__``) so all backends see
-    the right env vars regardless of which one is active.
+    Called at startup (from ``__main__``) and again whenever the user
+    saves settings or API keys via the dashboard.
+
+    Parameters
+    ----------
+    settings:
+        The application settings.
+    force:
+        When True, overwrite existing env vars. Used for runtime
+        updates (e.g. user saves a new API key via the dashboard).
+        When False (default/startup), existing env vars are preserved
+        so user-provided env vars take precedence.
     """
+
+    def _set(key: str, value: str) -> None:
+        if force or not os.environ.get(key):
+            os.environ[key] = value
+
     # -- Anthropic --
-    if settings.anthropic_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
-        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+    if settings.anthropic_api_key:
+        _set("ANTHROPIC_API_KEY", settings.anthropic_api_key)
 
     # -- OpenAI --
-    if settings.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
-        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+    if settings.openai_api_key:
+        _set("OPENAI_API_KEY", settings.openai_api_key)
 
     # -- Google --
-    if settings.google_api_key and not os.environ.get("GOOGLE_API_KEY"):
-        os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+    if settings.google_api_key:
+        _set("GOOGLE_API_KEY", settings.google_api_key)
 
     # -- OpenRouter --
-    if settings.openrouter_api_key and not os.environ.get("OPENROUTER_API_KEY"):
-        os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key
+    if settings.openrouter_api_key:
+        _set("OPENROUTER_API_KEY", settings.openrouter_api_key)
 
     # -- LiteLLM --
-    if settings.litellm_api_key and not os.environ.get("LITELLM_API_KEY"):
-        os.environ["LITELLM_API_KEY"] = settings.litellm_api_key
+    if settings.litellm_api_key:
+        _set("LITELLM_API_KEY", settings.litellm_api_key)
 
     # -- Ollama --
     if settings.ollama_host != "http://localhost:11434":
-        os.environ.setdefault("OLLAMA_HOST", settings.ollama_host)
+        if force:
+            os.environ["OLLAMA_HOST"] = settings.ollama_host
+        else:
+            os.environ.setdefault("OLLAMA_HOST", settings.ollama_host)
 
     logger.debug(
         "Backend env resolved for %s (ANTHROPIC=%s, OPENAI=%s, GOOGLE=%s, LITELLM=%s)",

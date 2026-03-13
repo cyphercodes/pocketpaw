@@ -23,6 +23,7 @@ from pocketpaw.dashboard_state import (
     agent_loop,
     ws_adapter,
 )
+from pocketpaw.llm.client import resolve_backend_env
 from pocketpaw.memory import get_memory_manager
 from pocketpaw.scheduler import get_scheduler
 from pocketpaw.security.rate_limiter import ws_limiter
@@ -489,6 +490,9 @@ async def websocket_handler(
                     warnings = validate_api_keys(settings)
                     settings.save()
 
+                # Sync env vars so running backends see updated keys
+                resolve_backend_env(settings, force=True)
+
                 # Reset the agent loop's router to pick up new settings
                 agent_loop.reset_router()
 
@@ -544,6 +548,7 @@ async def websocket_handler(
                     if provider == "anthropic" and key:
                         settings.anthropic_api_key = key
                         settings.save()
+                        resolve_backend_env(settings, force=True)
                         agent_loop.reset_router()
                         await websocket.send_json(
                             _api_key_response(
@@ -554,6 +559,7 @@ async def websocket_handler(
                     elif provider == "openai" and key:
                         settings.openai_api_key = key
                         settings.save()
+                        resolve_backend_env(settings, force=True)
                         agent_loop.reset_router()
                         await websocket.send_json(
                             _api_key_response(
@@ -564,6 +570,7 @@ async def websocket_handler(
                     elif provider == "google" and key:
                         settings.google_api_key = key
                         settings.save()
+                        resolve_backend_env(settings, force=True)
                         agent_loop.reset_router()
                         await websocket.send_json(_api_key_response("\u2705 Google API key saved!"))
                     elif provider == "tavily" and key:
