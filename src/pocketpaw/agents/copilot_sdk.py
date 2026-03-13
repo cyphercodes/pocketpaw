@@ -44,7 +44,7 @@ class CopilotSDKBackend:
                 "web_search": "browser",
             },
             required_keys=[],
-            supported_providers=["copilot", "openai", "azure", "anthropic"],
+            supported_providers=["copilot", "openai", "azure", "anthropic", "litellm"],
             install_hint={
                 "pip_package": "github-copilot-sdk",
                 "pip_spec": "github-copilot-sdk",
@@ -135,6 +135,13 @@ class CopilotSDKBackend:
                 cfg["api_key"] = self.settings.anthropic_api_key
             return cfg
 
+        if provider == "litellm":
+            # Route through LiteLLM proxy using OpenAI-compatible interface
+            cfg = {"type": "openai"}
+            cfg["base_url"] = self.settings.litellm_api_base.rstrip("/") + "/v1"
+            cfg["api_key"] = self.settings.litellm_api_key or "not-needed"
+            return cfg
+
         # Default: use GitHub Copilot provider (no BYOK config needed)
         return None
 
@@ -191,6 +198,9 @@ class CopilotSDKBackend:
             full_prompt = "\n\n".join(prompt_parts)
 
             model = self.settings.copilot_sdk_model or "gpt-5.2"
+            # When using LiteLLM, prefer the litellm_model setting
+            if self.settings.copilot_sdk_provider == "litellm" and self.settings.litellm_model:
+                model = self.settings.litellm_model
             provider_config = self._get_provider_config()
 
             # Create or reuse session

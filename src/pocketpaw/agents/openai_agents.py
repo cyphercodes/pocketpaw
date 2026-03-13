@@ -45,7 +45,7 @@ class OpenAIAgentsBackend:
                 "computer_use": "shell",
             },
             required_keys=["openai_api_key"],
-            supported_providers=["openai", "ollama", "openrouter", "openai_compatible"],
+            supported_providers=["openai", "ollama", "openrouter", "openai_compatible", "litellm"],
             install_hint={
                 "pip_package": "openai-agents",
                 "pip_spec": "pocketpaw[openai-agents]",
@@ -161,13 +161,44 @@ class OpenAIAgentsBackend:
         return self._custom_tools
 
     def _build_model(self) -> Any:
-        """Build the model instance, supporting Ollama via OpenAI-compat."""
+        """Build the model instance, supporting Ollama, LiteLLM, and OpenAI-compat."""
         model_name = self.settings.openai_agents_model or self.settings.openai_model or "gpt-5.2"
 
         # Per-backend provider setting, with fallback to global llm_provider
         provider = (
             getattr(self.settings, "openai_agents_provider", "") or self.settings.llm_provider
         )
+
+        # LiteLLM: prefer the native LitellmModel extension if available,
+        # otherwise fall back to OpenAIChatCompletionsModel pointed at the proxy.
+        if provider == "litellm":
+            litellm_model = self.settings.litellm_model or model_name
+            try:
+                from agents.extensions.models.litellm_model import LitellmModel
+
+                logger.info(
+                    "Using LitellmModel (direct SDK integration) with model=%s",
+                    litellm_model,
+                )
+                return LitellmModel(
+                    model=litellm_model,
+                    api_key=self.settings.litellm_api_key,
+                    base_url=self.settings.litellm_api_base,
+                )
+            except ImportError:
+                logger.info(
+                    "LitellmModel not available (install openai-agents[litellm]). "
+                    "Falling back to OpenAI-compat proxy mode."
+                )
+                from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+                from openai import AsyncOpenAI
+
+                base_url = self.settings.litellm_api_base.rstrip("/") + "/v1"
+                client = AsyncOpenAI(
+                    base_url=base_url,
+                    api_key=self.settings.litellm_api_key or "not-needed",
+                )
+                return OpenAIChatCompletionsModel(model=litellm_model, openai_client=client)
 
         # If Ollama, OpenRouter, or OpenAI-compatible endpoint is configured,
         # use OpenAIChatCompletionsModel

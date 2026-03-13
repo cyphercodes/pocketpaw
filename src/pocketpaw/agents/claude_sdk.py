@@ -78,7 +78,13 @@ class ClaudeSDKBackend:
             ],
             tool_policy_map=ClaudeSDKBackend._TOOL_POLICY_MAP,
             required_keys=["anthropic_api_key"],
-            supported_providers=["anthropic", "ollama", "openrouter", "openai_compatible"],
+            supported_providers=[
+                "anthropic",
+                "ollama",
+                "openrouter",
+                "openai_compatible",
+                "litellm",
+            ],
         )
 
     def __init__(self, settings: Settings):
@@ -683,7 +689,7 @@ class ClaudeSDKBackend:
             llm = resolve_llm_client(self.settings, force_provider=provider)
 
             # ── API key check for Anthropic provider ──────────────
-            if not (llm.is_ollama or llm.is_openai_compatible or llm.is_gemini):
+            if not (llm.is_ollama or llm.is_openai_compatible or llm.is_gemini or llm.is_litellm):
                 has_api_key = bool(llm.api_key or os.environ.get("ANTHROPIC_API_KEY"))
                 if not has_api_key:
                     yield AgentEvent(
@@ -712,6 +718,7 @@ class ClaudeSDKBackend:
                 and not llm.is_ollama
                 and not llm.is_openai_compatible
                 and not llm.is_gemini
+                and not llm.is_litellm
             ):
                 from pocketpaw.agents.model_router import ModelRouter, TaskComplexity
 
@@ -813,7 +820,7 @@ class ClaudeSDKBackend:
                 os.environ.pop(_strip_key, None)
             if sdk_env:
                 options_kwargs["env"] = sdk_env
-            if llm.is_ollama or llm.is_openai_compatible or llm.is_gemini:
+            if llm.is_ollama or llm.is_openai_compatible or llm.is_gemini or llm.is_litellm:
                 options_kwargs["model"] = llm.model
 
             # ── Debug logging for troubleshooting SDK startup ──
@@ -856,7 +863,7 @@ class ClaudeSDKBackend:
             # 1. Smart routing (opt-in) — overrides with complexity-based model
             # 2. Explicit claude_sdk_model — user-chosen fixed model
             # 3. Neither set — let Claude Code CLI auto-select (recommended)
-            if not (llm.is_ollama or llm.is_openai_compatible or llm.is_gemini):
+            if not (llm.is_ollama or llm.is_openai_compatible or llm.is_gemini or llm.is_litellm):
                 if self.settings.smart_routing_enabled:
                     from pocketpaw.agents.model_router import ModelRouter
 

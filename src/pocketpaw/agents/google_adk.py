@@ -47,7 +47,7 @@ class GoogleADKBackend:
                 "code_execution": "shell",
             },
             required_keys=["google_api_key"],
-            supported_providers=["google"],
+            supported_providers=["google", "litellm"],
             install_hint={
                 "pip_package": "google-adk",
                 "pip_spec": "pocketpaw[google-adk]",
@@ -75,11 +75,20 @@ class GoogleADKBackend:
             logger.warning("Google ADK not installed — pip install 'pocketpaw[google-adk]'")
             return
 
-        # Set API key env var for ADK
-        api_key = self.settings.google_api_key
-        if api_key:
-            os.environ["GOOGLE_API_KEY"] = api_key
-        # Disable Vertex AI — use direct API key auth
+        provider = getattr(self.settings, "google_adk_provider", "google")
+
+        if provider == "litellm":
+            # LiteLLM proxy mode: set env vars for litellm SDK integration
+            if self.settings.litellm_api_key:
+                os.environ["LITELLM_PROXY_API_KEY"] = self.settings.litellm_api_key
+            os.environ["LITELLM_PROXY_API_BASE"] = self.settings.litellm_api_base
+        else:
+            # Native Google mode: set API key env var for ADK
+            api_key = self.settings.google_api_key
+            if api_key:
+                os.environ["GOOGLE_API_KEY"] = api_key
+
+        # Disable Vertex AI -- use direct API key auth
         os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "FALSE"
 
     def _build_custom_tools(self) -> list:
@@ -156,12 +165,34 @@ class GoogleADKBackend:
         logger.info("Built %d MCP toolsets for ADK", len(toolsets))
         return toolsets
 
+    def _build_model(self) -> Any:
+        """Build the model, using LiteLlm wrapper when provider is 'litellm'."""
+        provider = getattr(self.settings, "google_adk_provider", "google")
+        model_name = self.settings.google_adk_model or "gemini-3-pro-preview"
+
+        if provider == "litellm":
+            litellm_model = self.settings.litellm_model or model_name
+            try:
+                from google.adk.models.lite_llm import LiteLlm
+
+                logger.info("Using ADK LiteLlm wrapper with model=%s", litellm_model)
+                return LiteLlm(model=litellm_model)
+            except ImportError:
+                logger.warning(
+                    "google.adk.models.lite_llm not available. "
+                    "Install with: pip install 'google-adk[litellm]' or pip install litellm. "
+                    "Falling back to native Gemini model."
+                )
+                return model_name
+
+        return model_name
+
     def _get_runner(self, instruction: str, tools: list):
         """Create or reuse the InMemoryRunner."""
         from google.adk.agents import LlmAgent
         from google.adk.runners import InMemoryRunner
 
-        model = self.settings.google_adk_model or "gemini-3-pro-preview"
+        model = self._build_model()
 
         agent = LlmAgent(
             name="PocketPaw",

@@ -2,11 +2,17 @@
 
 Consolidates provider detection, client creation, env var construction,
 and error formatting that was previously duplicated across 7+ files.
+
+Also provides ``resolve_backend_env()`` which pushes the correct
+environment variables (API keys, base URLs) for whichever backend is
+currently active, so switching backends doesn't require manually
+reconfiguring env vars.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 
 from pocketpaw.config import Settings
@@ -21,7 +27,7 @@ class LLMClient:
     Created via ``resolve_llm_client()`` — not intended for direct construction.
     """
 
-    provider: str  # "anthropic" | "ollama" | "openai" | "openai_compatible" | "gemini"
+    provider: str  # "anthropic" | "ollama" | "openai" | "openai_compatible" | "gemini" | "litellm"
     model: str  # resolved model name
     api_key: str | None  # API key (None for Ollama)
     ollama_host: str  # Ollama server URL (always populated from settings)
@@ -44,6 +50,10 @@ class LLMClient:
     @property
     def is_gemini(self) -> bool:
         return self.provider == "gemini"
+
+    @property
+    def is_litellm(self) -> bool:
+        return self.provider == "litellm"
 
     # -- factory methods --
 
@@ -90,6 +100,14 @@ class LLMClient:
                 max_retries=max_retries if max_retries is not None else 1,
             )
 
+        if self.is_litellm:
+            return AsyncAnthropic(
+                base_url=self.openai_compatible_base_url,
+                api_key=self.api_key or "not-needed",
+                timeout=timeout if timeout is not None else 120.0,
+                max_retries=max_retries if max_retries is not None else 2,
+            )
+
         if self.is_openai_compatible or self.is_gemini:
             return AsyncAnthropic(
                 base_url=self.openai_compatible_base_url,
@@ -123,6 +141,15 @@ class LLMClient:
         expects ANTHROPIC_AUTH_TOKEN (the OpenRouter key) and ANTHROPIC_API_KEY
         set to empty string to avoid conflicts.
         """
+        if self.is_litellm:
+            # LiteLLM proxy exposes an Anthropic-compatible endpoint.
+            # Point ANTHROPIC_BASE_URL at the proxy so the Claude SDK
+            # sends requests there instead of api.anthropic.com.
+            env: dict[str, str] = {
+                "ANTHROPIC_BASE_URL": self.openai_compatible_base_url,
+                "ANTHROPIC_API_KEY": self.api_key or "not-needed",
+            }
+            return env
         if self.is_ollama:
             return {
                 "ANTHROPIC_BASE_URL": self.ollama_host,
@@ -246,6 +273,23 @@ class LLMClient:
                 f"Endpoint: `{self.openai_compatible_base_url}`"
             )
 
+        if self.is_litellm:
+            if "connection" in full_context or "refused" in full_context:
+                return (
+                    f"Cannot connect to LiteLLM proxy at "
+                    f"`{self.openai_compatible_base_url}`.\n\n"
+                    "Make sure the proxy is running: `litellm --config config.yaml`"
+                )
+            if "auth" in full_context or "api key" in full_context:
+                return (
+                    f"Authentication failed with LiteLLM proxy at "
+                    f"`{self.openai_compatible_base_url}`.\n\n"
+                    "Check your LiteLLM API key in **Settings > General > LiteLLM API Key**."
+                )
+            if stderr.strip():
+                return f"LiteLLM error:\n\n{stderr.strip()}"
+            return f"LiteLLM error: {error_str}\n\nProxy: `{self.openai_compatible_base_url}`"
+
         # Anthropic / OpenAI
         if "api key" in error_str.lower() or "authentication" in error_str.lower():
             return (
@@ -330,10 +374,65 @@ def resolve_llm_client(
             openai_compatible_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         )
 
+    if provider == "litellm":
+        return LLMClient(
+            provider="litellm",
+            model=settings.litellm_model,
+            api_key=settings.litellm_api_key,
+            ollama_host=settings.ollama_host,
+            openai_compatible_base_url=settings.litellm_api_base.rstrip("/"),
+        )
+
     # Default: anthropic
     return LLMClient(
         provider="anthropic",
         model=settings.anthropic_model,
         api_key=settings.anthropic_api_key,
         ollama_host=settings.ollama_host,
+    )
+
+
+def resolve_backend_env(settings: Settings) -> None:
+    """Push the correct environment variables for the active backend.
+
+    This solves the problem where switching backends (e.g. from
+    claude_agent_sdk to openai_agents) requires manually setting
+    different env vars. Instead, PocketPaw's unified POCKETPAW_*
+    settings are resolved here and pushed to the env vars each
+    backend's SDK expects.
+
+    Called once at startup (from ``__main__``) so all backends see
+    the right env vars regardless of which one is active.
+    """
+    # -- Anthropic --
+    if settings.anthropic_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
+        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+
+    # -- OpenAI --
+    if settings.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+
+    # -- Google --
+    if settings.google_api_key and not os.environ.get("GOOGLE_API_KEY"):
+        os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+
+    # -- OpenRouter --
+    if settings.openrouter_api_key and not os.environ.get("OPENROUTER_API_KEY"):
+        os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key
+
+    # -- LiteLLM --
+    if settings.litellm_api_key and not os.environ.get("LITELLM_API_KEY"):
+        os.environ["LITELLM_API_KEY"] = settings.litellm_api_key
+
+    # -- Ollama --
+    if settings.ollama_host != "http://localhost:11434":
+        os.environ.setdefault("OLLAMA_HOST", settings.ollama_host)
+
+    logger.debug(
+        "Backend env resolved for %s (ANTHROPIC=%s, OPENAI=%s, GOOGLE=%s, LITELLM=%s)",
+        settings.agent_backend,
+        "set" if os.environ.get("ANTHROPIC_API_KEY") else "unset",
+        "set" if os.environ.get("OPENAI_API_KEY") else "unset",
+        "set" if os.environ.get("GOOGLE_API_KEY") else "unset",
+        "set" if os.environ.get("LITELLM_API_KEY") else "unset",
     )
