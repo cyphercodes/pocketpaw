@@ -281,12 +281,13 @@ def test_should_respond_question_with_recent_bot(convo_adapter):
     assert convo_adapter._should_respond(100, "anyone know the answer?") == "engaged"
 
 
-def test_should_respond_bot_active_in_last_3(convo_adapter):
-    """Bot active in last 3 messages -> 'engaged'."""
+def test_should_not_respond_to_unrelated_after_bot_spoke(convo_adapter):
+    """Bot spoke recently but message isn't directed at it -> None (skip)."""
     convo_adapter._add_to_conversation_history(100, _BOT_AUTHOR_KEY, "here's my take")
     convo_adapter._add_to_conversation_history(100, "alice", "interesting")
     convo_adapter._add_to_conversation_history(100, "bob", "agreed")
-    assert convo_adapter._should_respond(100, "agreed") == "engaged"
+    # "agreed" is not a question and bot is not the immediately previous speaker
+    assert convo_adapter._should_respond(100, "agreed") is None
 
 
 def test_should_respond_skip_unrelated(convo_adapter):

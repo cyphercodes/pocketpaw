@@ -164,18 +164,12 @@ class DiscordAdapter(BaseChannelAdapter):
             if prev["author"] == _BOT_AUTHOR_KEY:
                 return "engaged"
 
-        # Question mark and bot was active in last 6 messages
+        # Question mark and bot was active in last 4 messages
         if lower.rstrip().endswith("?"):
-            recent = list(history)[-6:]
+            recent = list(history)[-4:]
             for msg in recent:
                 if msg["author"] == _BOT_AUTHOR_KEY:
                     return "engaged"
-
-        # Bot active in last 3 messages -> stay in the conversation
-        recent_short = list(history)[-3:]
-        for msg in recent_short:
-            if msg["author"] == _BOT_AUTHOR_KEY:
-                return "engaged"
 
         return None
 
@@ -246,14 +240,18 @@ class DiscordAdapter(BaseChannelAdapter):
                 f"Respond naturally and conversationally.]\n\n" + history_block
             )
 
-        # Engaged mode: bot was recently active, continue if relevant
+        # Engaged mode: bot was recently active, continue if relevant.
+        # The [NO_RESPONSE] instruction must be extremely explicit for weaker models.
         return (
             f"[You are {self.bot_name} in a Discord group chat "
-            f"#{channel_name}. You've been part of this conversation. "
-            "Continue naturally if the message is relevant to you or "
-            "the ongoing discussion. If this message clearly isn't "
-            f"directed at you, reply with exactly: "
-            f"{_NO_RESPONSE_MARKER}]\n\n" + history_block
+            f"#{channel_name}. You've been part of this conversation.\n\n"
+            "IMPORTANT RULE: If the latest message is NOT directed at you, "
+            "NOT about a topic you were discussing, and NOT asking you a question, "
+            f"you MUST reply with ONLY this exact text: {_NO_RESPONSE_MARKER}\n"
+            f"Do NOT add anything before or after {_NO_RESPONSE_MARKER}. "
+            "Do NOT explain why. Just output that exact marker and nothing else.\n\n"
+            "Only respond with a real answer if someone is clearly talking to you "
+            f"or asking about something you ({self.bot_name}) can help with.]\n\n" + history_block
         )
 
     # ── Settings persistence ────────────────────────────────────────────
