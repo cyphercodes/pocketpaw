@@ -102,9 +102,11 @@ class DiscliAdapter(BaseChannelAdapter):
 
         import os
 
+        # Set token in parent env so DiscordCLITool subprocesses inherit it
+        os.environ["DISCORD_BOT_TOKEN"] = self.token
+
         env = {
             "DISCORD_BOT_TOKEN": self.token,
-            # Force unbuffered stdout so JSONL events arrive immediately
             "PYTHONUNBUFFERED": "1",
         }
         full_env = {**os.environ, **env}
