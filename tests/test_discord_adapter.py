@@ -585,6 +585,7 @@ async def test_handle_slash_converse_enable(adapter, bus):
             "user_id": "999",
             "guild_id": "111",
             "interaction_token": "tok_conv",
+            "is_admin": True,
         }
     )
 
@@ -617,6 +618,7 @@ async def test_handle_slash_converse_disable(bus):
             "user_id": "999",
             "guild_id": "111",
             "interaction_token": "tok_conv2",
+            "is_admin": True,
         }
     )
 

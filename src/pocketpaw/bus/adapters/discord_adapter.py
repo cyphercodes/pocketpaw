@@ -44,7 +44,7 @@ class DiscliAdapter(BaseChannelAdapter):
         self.allowed_guild_ids = allowed_guild_ids or []
         self.allowed_user_ids = allowed_user_ids or []
         self.allowed_channel_ids = allowed_channel_ids or []
-        self.conversation_channel_ids = conversation_channel_ids or []
+        self.conversation_channel_ids: set[int] = set(conversation_channel_ids or [])
         self.bot_name = bot_name or "Paw"
         self.status_type = (
             status_type if status_type in {"online", "idle", "dnd", "invisible"} else "online"
@@ -53,6 +53,7 @@ class DiscliAdapter(BaseChannelAdapter):
         self.activity_text = activity_text
 
         self._proc: asyncio.subprocess.Process | None = None
+        self._slash_config_path: str | None = None
         self._reader_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
         self._bot_id: str | None = None
@@ -83,7 +84,8 @@ class DiscliAdapter(BaseChannelAdapter):
             )
 
         # Build slash commands config
-        slash_file = await self._write_slash_config()
+        self._slash_config_path = await self._write_slash_config()
+        slash_file = self._slash_config_path
 
         cmd = [
             discli_path,
@@ -261,6 +263,14 @@ class DiscliAdapter(BaseChannelAdapter):
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
             except TimeoutError:
                 self._proc.kill()
+        if self._slash_config_path:
+            import os
+
+            try:
+                os.unlink(self._slash_config_path)
+            except OSError:
+                pass
+            self._slash_config_path = None
         self._conversation_history.clear()
         self._conversation_last_active.clear()
         logger.info("Discli Adapter stopped")
@@ -278,7 +288,7 @@ class DiscliAdapter(BaseChannelAdapter):
         cmd = {"action": action, "req_id": req_id, **kwargs}
         line = json.dumps(cmd, default=str) + "\n"
 
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending_requests[req_id] = future
 
         try:
@@ -474,12 +484,12 @@ class DiscliAdapter(BaseChannelAdapter):
                 return
             ch_id = int(channel_id)
             if ch_id in self.conversation_channel_ids:
-                self.conversation_channel_ids.remove(ch_id)
+                self.conversation_channel_ids.discard(ch_id)
                 self._conversation_history.pop(ch_id, None)
                 self._conversation_last_active.pop(ch_id, None)
                 reply = "Conversation mode **disabled** for this channel."
             else:
-                self.conversation_channel_ids.append(ch_id)
+                self.conversation_channel_ids.add(ch_id)
                 reply = (
                     "Conversation mode **enabled** for this channel. "
                     f"I'll respond when mentioned or addressed as {self.bot_name}."

@@ -699,14 +699,12 @@ class ClaudeSDKBackend:
             llm = resolve_llm_client(self.settings, force_provider=provider)
 
             # ── API key check for Anthropic provider ──────────────
-            # Skip if using a non-Anthropic provider, or if the Claude Code
-            # CLI is available (it handles OAuth auth internally).
-            import shutil as _shutil_check
-
-            has_cli = bool(_shutil_check.which("claude"))
+            # Skip if using a non-Anthropic provider, or if the active
+            # provider is claude_code (it handles OAuth auth via its CLI).
+            is_claude_code_provider = provider in ("claude_code", "claude_agent_sdk")
             if not (llm.is_ollama or llm.is_openai_compatible or llm.is_gemini or llm.is_litellm):
                 has_api_key = bool(llm.api_key or os.environ.get("ANTHROPIC_API_KEY"))
-                if not has_api_key and not has_cli:
+                if not has_api_key and not is_claude_code_provider:
                     yield AgentEvent(
                         type="error",
                         content=(

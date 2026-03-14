@@ -4,6 +4,7 @@
 import asyncio
 import json
 import logging
+import shlex
 import shutil
 from typing import Any
 
@@ -76,11 +77,16 @@ class DiscordCLITool(BaseTool):
                 "discli is not installed. Install it with: pip install discord-cli-agent"
             )
 
-        full_cmd = f"discli --json {command}"
+        try:
+            args = shlex.split(command)
+        except ValueError as e:
+            return self._error(f"Invalid command syntax: {e}")
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                full_cmd,
+            proc = await asyncio.create_subprocess_exec(
+                "discli",
+                "--json",
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
