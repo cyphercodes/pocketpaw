@@ -2333,6 +2333,53 @@
             </div>
           </div>
         </div>
+
+<!-- Soul Protocol -->
+<div x-show="settingsSection === 'soul' && settingsSearchResults.length === 0" class="space-y-4">
+  <h3 class="text-[14px] font-semibold text-white/80 mb-3">Soul Protocol</h3>
+  <p class="text-[11px] text-white/40 -mt-1 mb-3">Persistent AI identity with psychology-informed memory, OCEAN personality, and emotional state.</p>
+
+  <!-- Enable -->
+  <div>
+    <label class="flex items-start gap-2.5 cursor-pointer group">
+      <input type="checkbox" x-model="settings.soulEnabled" @change="saveSettings()" class="mt-0.5 accent-[var(--accent-color)] w-4 h-4" />
+      <div class="flex flex-col">
+        <span class="text-[13px] font-medium group-hover:text-white transition-colors">Enable Soul Protocol</span>
+        <span class="text-[11px] text-white/50 mt-0.5">Give the agent persistent identity, memory, and emotion</span>
+      </div>
+    </label>
+  </div>
+
+  <!-- Conditional sub-fields -->
+  <div x-show="settings.soulEnabled" x-transition class="flex flex-col gap-3.5 pl-2 border-l-2 border-[var(--accent-color)]/30 ml-1">
+    <!-- Soul Name -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-[12px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">Soul Name</label>
+      <input type="text" x-model="settings.soulName" @change="saveSettings()" placeholder="Paw" class="w-full bg-black/30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all placeholder-white/40" />
+    </div>
+
+    <!-- Archetype -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-[12px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">Archetype</label>
+      <input type="text" x-model="settings.soulArchetype" @change="saveSettings()" placeholder="The Helpful Assistant" class="w-full bg-black/30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all placeholder-white/40" />
+      <span class="text-[11px] text-white/40">e.g. "The Coding Expert", "The Compassionate Creator"</span>
+    </div>
+
+    <!-- Persona -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-[12px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">Custom Persona</label>
+      <textarea x-model="settings.soulPersona" @change="saveSettings()" placeholder="Leave empty for auto-generated persona" rows="3" class="w-full bg-black/30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all placeholder-white/40 resize-y"></textarea>
+    </div>
+
+    <!-- Auto-Save Interval -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-[12px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">Auto-Save Interval (seconds)</label>
+      <input type="number" x-model.number="settings.soulAutoSaveInterval" @change="saveSettings()" min="0" max="3600" placeholder="300" class="w-full bg-black/30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all placeholder-white/40" />
+      <span class="text-[11px] text-white/40">How often to auto-save soul state (0 = disabled, default 300 = 5 minutes)</span>
+    </div>
+  </div>
+</div>
+
       </div>
     </div>
 

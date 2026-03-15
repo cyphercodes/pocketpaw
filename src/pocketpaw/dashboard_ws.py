@@ -491,6 +491,19 @@ async def websocket_handler(
                         val = data["web_port"]
                         if isinstance(val, int | float) and 1 <= val <= 65535:
                             settings.web_port = int(val)
+                    # Soul Protocol
+                    if "soul_enabled" in data:
+                        settings.soul_enabled = bool(data["soul_enabled"])
+                    if data.get("soul_name"):
+                        settings.soul_name = data["soul_name"]
+                    if data.get("soul_archetype"):
+                        settings.soul_archetype = data["soul_archetype"]
+                    if "soul_persona" in data:
+                        settings.soul_persona = data.get("soul_persona", "")
+                    if "soul_auto_save_interval" in data:
+                        val = data["soul_auto_save_interval"]
+                        if isinstance(val, int | float) and 0 <= val <= 3600:
+                            settings.soul_auto_save_interval = int(val)
                     warnings = validate_api_keys(settings)
                     settings.save()
 

@@ -58,6 +58,7 @@ function app() {
             { id: 'memory', label: 'Memory', icon: 'database' },
             { id: 'services', label: 'Search & Services', icon: 'search' },
             { id: 'system', label: 'System', icon: 'activity' },
+            { id: 'soul', label: 'Soul', icon: 'sparkles' },
         ],
 
         // Terminal logs
@@ -130,7 +131,12 @@ function app() {
             mem0VectorStore: 'qdrant',
             mem0OllamaBaseUrl: 'http://localhost:11434',
             webHost: '127.0.0.1',
-            webPort: 8888
+            webPort: 8888,
+            soulEnabled: false,
+            soulName: 'Paw',
+            soulArchetype: 'The Helpful Assistant',
+            soulPersona: '',
+            soulAutoSaveInterval: 300,
         },
 
         // API Keys (not persisted client-side, but we track if saved on server)
@@ -889,6 +895,10 @@ function app() {
             { section: 'services', sectionLabel: 'Search & Services', label: 'TTS Provider', hint: 'voice openai elevenlabs sarvam' },
             { section: 'services', sectionLabel: 'Search & Services', label: 'OCR Provider', hint: 'vision tesseract' },
             { section: 'system', sectionLabel: 'System', label: 'Self-Audit Daemon', hint: 'audit schedule' },
+            { section: 'soul', sectionLabel: 'Soul', label: 'Enable Soul Protocol', hint: 'soul identity personality memory emotion' },
+            { section: 'soul', sectionLabel: 'Soul', label: 'Soul Name', hint: 'soul name identity' },
+            { section: 'soul', sectionLabel: 'Soul', label: 'Archetype', hint: 'soul archetype personality role' },
+            { section: 'soul', sectionLabel: 'Soul', label: 'Auto-Save Interval', hint: 'soul save persist crash' },
         ],
 
         searchSettings() {
