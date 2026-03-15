@@ -121,3 +121,89 @@ class TestSoulManager:
 
         assert (tmp_path / "shutdown.soul").exists()
         assert mgr._auto_save_task is None or mgr._auto_save_task.done()
+
+    async def test_import_from_soul_file(self, soul_settings, tmp_path):
+        """Import a .soul file replaces the current soul."""
+        # Birth and export a soul to a separate file
+        from soul_protocol import Soul
+
+        from pocketpaw.soul.manager import SoulManager
+
+        donor = await Soul.birth(name="Donor", persona="I am the donor soul.")
+        donor_path = tmp_path / "donor.soul"
+        await donor.export(donor_path)
+
+        # Initialize manager with default soul
+        mgr = SoulManager(soul_settings)
+        await mgr.initialize()
+        assert mgr.soul.name == "TestSoul"
+
+        # Import the donor soul
+        name = await mgr.import_from_file(donor_path)
+        assert name == "Donor"
+        assert mgr.soul.name == "Donor"
+        # Should have been saved to the manager's configured path
+        assert (tmp_path / "test.soul").exists()
+
+    async def test_import_from_yaml_config(self, soul_settings, tmp_path):
+        """Import a YAML config births a new soul from it."""
+        from pocketpaw.soul.manager import SoulManager
+
+        yaml_path = tmp_path / "config.yaml"
+        yaml_path.write_text(
+            "name: YamlSoul\n"
+            "archetype: The Yaml Expert\n"
+            "values: [clarity, speed]\n"
+            "persona: I was born from YAML.\n"
+        )
+
+        mgr = SoulManager(soul_settings)
+        await mgr.initialize()
+
+        name = await mgr.import_from_file(yaml_path)
+        assert name == "YamlSoul"
+        assert mgr.soul.name == "YamlSoul"
+
+    async def test_import_from_json_config(self, soul_settings, tmp_path):
+        """Import a JSON config births a new soul from it."""
+        import json
+
+        from pocketpaw.soul.manager import SoulManager
+
+        json_path = tmp_path / "config.json"
+        json_path.write_text(
+            json.dumps(
+                {
+                    "name": "JsonSoul",
+                    "archetype": "The Json Expert",
+                    "persona": "I was born from JSON.",
+                }
+            )
+        )
+
+        mgr = SoulManager(soul_settings)
+        await mgr.initialize()
+
+        name = await mgr.import_from_file(json_path)
+        assert name == "JsonSoul"
+
+    async def test_import_unsupported_format_raises(self, soul_settings, tmp_path):
+        from pocketpaw.soul.manager import SoulManager
+
+        mgr = SoulManager(soul_settings)
+        await mgr.initialize()
+
+        bad_file = tmp_path / "config.txt"
+        bad_file.write_text("not supported")
+
+        with pytest.raises(ValueError, match="Unsupported file format"):
+            await mgr.import_from_file(bad_file)
+
+    async def test_import_missing_file_raises(self, soul_settings, tmp_path):
+        from pocketpaw.soul.manager import SoulManager
+
+        mgr = SoulManager(soul_settings)
+        await mgr.initialize()
+
+        with pytest.raises(FileNotFoundError):
+            await mgr.import_from_file(tmp_path / "nonexistent.soul")

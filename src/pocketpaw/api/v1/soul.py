@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, UploadFile
 
 from pocketpaw.api.deps import require_scope
 
@@ -52,3 +54,85 @@ async def export_soul():
 
     await mgr.save()
     return {"path": str(mgr.soul_file), "status": "exported"}
+
+
+_ALLOWED_IMPORT_SUFFIXES = frozenset({".soul", ".yaml", ".yml", ".json"})
+
+
+@router.post("/soul/import")
+async def import_soul(file: UploadFile):
+    """Import a soul from an uploaded .soul, .yaml, .yml, or .json file.
+
+    Replaces the currently active soul with the imported one.
+    Requires soul to be enabled in settings.
+    """
+    from pocketpaw.soul.manager import get_soul_manager
+
+    mgr = get_soul_manager()
+    if mgr is None:
+        return {"error": "Soul not enabled. Enable it in Settings > Soul first."}
+
+    # Validate file extension
+    filename = file.filename or "upload"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in _ALLOWED_IMPORT_SUFFIXES:
+        return {
+            "error": f"Unsupported file type: {suffix}. "
+            f"Accepted: {', '.join(sorted(_ALLOWED_IMPORT_SUFFIXES))}"
+        }
+
+    # Save upload to a temp file in the soul directory
+    from pocketpaw.config import get_config_dir
+
+    import_dir = get_config_dir() / "soul" / "imports"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = import_dir / f"import{suffix}"
+
+    try:
+        content = await file.read()
+        temp_path.write_bytes(content)
+
+        name = await mgr.import_from_file(temp_path)
+        return {"status": "imported", "name": name, "path": str(mgr.soul_file)}
+    except (ValueError, FileNotFoundError) as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        return {"error": f"Import failed: {exc}"}
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+@router.post("/soul/import-path")
+async def import_soul_from_path(body: dict):
+    """Import a soul from a file path on the server's filesystem.
+
+    Body: {"path": "/path/to/file.soul"} or {"path": "/path/to/config.yaml"}
+    """
+    from pocketpaw.soul.manager import get_soul_manager
+
+    mgr = get_soul_manager()
+    if mgr is None:
+        return {"error": "Soul not enabled. Enable it in Settings > Soul first."}
+
+    file_path = body.get("path", "")
+    if not file_path:
+        return {"error": "Missing 'path' field"}
+
+    path = Path(file_path)
+    if not path.exists():
+        return {"error": f"File not found: {file_path}"}
+
+    suffix = path.suffix.lower()
+    if suffix not in _ALLOWED_IMPORT_SUFFIXES:
+        return {
+            "error": f"Unsupported file type: {suffix}. "
+            f"Accepted: {', '.join(sorted(_ALLOWED_IMPORT_SUFFIXES))}"
+        }
+
+    try:
+        name = await mgr.import_from_file(path)
+        return {"status": "imported", "name": name, "path": str(mgr.soul_file)}
+    except (ValueError, FileNotFoundError) as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        return {"error": f"Import failed: {exc}"}

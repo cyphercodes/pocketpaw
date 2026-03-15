@@ -197,6 +197,61 @@ class SoulManager:
         await self.save()
         logger.info("Soul shut down and saved")
 
+    async def import_from_file(self, file_path: Path) -> str:
+        """Import a soul from a .soul file or YAML/JSON config.
+
+        Replaces the current soul, re-wires bridge and bootstrap provider,
+        and saves to the configured soul_file location.
+
+        Args:
+            file_path: Path to a .soul, .yaml, .yml, or .json file.
+
+        Returns:
+            The imported soul's name.
+
+        Raises:
+            ImportError: If soul-protocol is not installed.
+            ValueError: If the file format is unsupported.
+            FileNotFoundError: If the file does not exist.
+        """
+        try:
+            from soul_protocol import Soul
+        except ImportError:
+            raise ImportError(
+                "soul-protocol not installed. Install with: pip install pocketpaw[soul]"
+            ) from None
+
+        from pocketpaw.paw.soul_bridge import SoulBootstrapProvider, SoulBridge
+
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        suffix = file_path.suffix.lower()
+        if suffix == ".soul":
+            new_soul = await self._try_awaken(Soul, file_path)
+            if new_soul is None:
+                raise ValueError(f"Failed to load .soul file: {file_path}")
+        elif suffix in (".yaml", ".yml", ".json"):
+            new_soul = await Soul.birth_from_config(file_path)
+        else:
+            raise ValueError(
+                f"Unsupported file format: {suffix}. Use .soul, .yaml, .yml, or .json."
+            )
+
+        # Replace current soul
+        self.soul = new_soul
+        self.bridge = SoulBridge(self.soul)
+        self.bootstrap_provider = SoulBootstrapProvider(self.soul)
+        self._initialized = True
+        self._observe_count = 0
+
+        # Persist to configured location
+        await self.save()
+
+        logger.info("Soul imported from %s: %s", file_path, self.soul.name)
+        return self.soul.name
+
     def get_tools(self) -> list[BaseTool]:
         """Return the four soul tools."""
         if self.soul is None:
