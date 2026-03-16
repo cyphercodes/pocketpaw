@@ -1,4 +1,4 @@
-import typing
+from collections.abc import AsyncGenerator
 
 import httpx
 
@@ -42,7 +42,7 @@ class A2AClient:
 
     async def send_task_stream(
         self, base_url: str, params: TaskSendParams
-    ) -> typing.AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str, None]:
         """Submit a task and yield SSE events from a remote A2A agent."""
         url = f"{base_url.rstrip('/')}/a2a/tasks/send/stream"
         payload = params.model_dump(mode="json", exclude_none=True)

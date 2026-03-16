@@ -160,6 +160,12 @@ class TestA2AClient:
 
 
 class TestA2ADelegateTool:
+    @pytest.fixture(autouse=True)
+    def mock_settings(self):
+        with patch("pocketpaw.tools.builtin.a2a_delegate.get_settings") as mock_get_settings:
+            mock_get_settings.return_value.a2a_trusted_agents = ["http://localhost:8001"]
+            yield mock_get_settings
+
     async def test_delegate_tool_success(self, mock_agent_card, mock_task):
         tool = A2ADelegateTool()
 

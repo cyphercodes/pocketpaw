@@ -498,6 +498,10 @@ class Settings(BaseSettings):
         default_factory=list,
         description="Additional CORS origins for external clients (e.g. tauri://localhost)",
     )
+    a2a_trusted_agents: list[str] = Field(
+        default_factory=list,
+        description="Explicitly allowed A2A agent base URLs for task delegation (prevents SSRF)",
+    )
     api_rate_limit_per_key: int = Field(
         default=60,
         gt=0,

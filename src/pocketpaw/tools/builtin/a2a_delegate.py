@@ -1,8 +1,13 @@
+import asyncio
+import ipaddress
 import json
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
 from pocketpaw.a2a.client import A2AClient
 from pocketpaw.a2a.models import A2AMessage, TaskSendParams, TextPart
+from pocketpaw.config import get_settings
 from pocketpaw.tools.protocol import BaseTool
 
 
@@ -51,6 +56,39 @@ class A2ADelegateTool(BaseTool):
         }
 
     async def execute(self, agent_url: str, task: str, task_id: str | None = None) -> str:
+        # Prevent SSRF: validate agent_url scheme and host
+        settings = get_settings()
+        allowed_agents = [url.rstrip("/") for url in settings.a2a_trusted_agents]
+        base_url = agent_url.rstrip("/")
+
+        if base_url not in allowed_agents:
+            try:
+                parsed = urlparse(agent_url)
+                if parsed.scheme not in ("http", "https"):
+                    return self._error("Invalid URL scheme. Only HTTP/HTTPS are allowed.")
+
+                hostname = parsed.hostname
+                if not hostname:
+                    return self._error("Invalid URL hostname.")
+
+                loop = asyncio.get_event_loop()
+                ip_str = await loop.run_in_executor(None, socket.gethostbyname, hostname)
+                ip = ipaddress.ip_address(ip_str)
+
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_multicast
+                    or ip.is_reserved
+                ):
+                    return self._error(
+                        f"SSRF Protection: Access to local/private IP ({ip_str}) is denied. "
+                        "Add this URL to the 'a2a_trusted_agents' allowlist in settings to permit."
+                    )
+            except Exception as e:
+                return self._error(f"URL validation failed: {str(e)}")
+
         client = A2AClient()
 
         try:
