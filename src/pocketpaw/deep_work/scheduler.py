@@ -8,8 +8,10 @@
 # - get_ready_tasks: finds tasks with all blockers satisfied (DONE or SKIPPED)
 # - on_task_completed: auto-dispatches newly unblocked tasks
 # - validate_graph: cycle detection via Kahn's algorithm (works with Task and TaskSpec)
-# - get_execution_order: groups tasks by dependency level (works with Task and TaskSpec)
 
+from __future__ import annotations
+
+# - get_execution_order: groups tasks by dependency level (works with Task and TaskSpec)
 import asyncio
 import logging
 from collections import deque

@@ -8,6 +8,8 @@ Extracted from dashboard.py — contains:
   and token regeneration endpoints
 """
 
+from __future__ import annotations
+
 import io
 import logging
 

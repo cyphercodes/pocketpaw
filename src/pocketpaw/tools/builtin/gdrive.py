@@ -2,6 +2,8 @@
 # Created: 2026-02-09
 # Part of Phase 4 Media Integrations
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

@@ -8,6 +8,9 @@
 # Updated: 2026-02-12 — Added executor integration for pause/stop.
 #
 # Ties together GoalParser, Planner, DependencyScheduler, MCTaskExecutor,
+
+from __future__ import annotations
+
 # and HumanTaskRouter into a single class that manages a Deep Work project
 # from user input through goal analysis, planning, approval, execution,
 # and completion.
@@ -18,7 +21,6 @@
 #   session.pause(project_id) -> Project   (stop running tasks)
 #   session.resume(project_id) -> Project  (resume dispatching)
 #   session.cancel(project_id) -> Project  (stop everything, mark cancelled)
-
 import asyncio
 import logging
 from typing import Any

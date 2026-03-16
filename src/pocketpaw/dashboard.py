@@ -24,6 +24,8 @@ Changes:
   - 2026-02-02: Enhanced logging to show which backend is processing requests.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import io

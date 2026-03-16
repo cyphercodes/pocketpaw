@@ -4,6 +4,8 @@ Extracted from __main__.py — contains run_telegram_mode(),
 run_multi_channel_mode(), _is_headless(), and _check_extras_installed().
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import importlib.util
