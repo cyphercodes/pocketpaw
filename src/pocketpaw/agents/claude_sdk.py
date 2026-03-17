@@ -12,8 +12,6 @@ Uses the official Claude Agent SDK (pip install claude-agent-sdk) which provides
 - MCP server support for custom tools
 """
 
-from __future__ import annotations
-
 import logging
 import re
 from collections.abc import AsyncIterator

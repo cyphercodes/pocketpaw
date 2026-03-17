@@ -5,8 +5,6 @@ Spawns `discli serve` as a subprocess, communicates via stdin/stdout JSONL.
 Replaces the direct discord.py adapter with a thin process bridge.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging

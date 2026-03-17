@@ -4,8 +4,6 @@ Extracted from __main__.py — contains run_telegram_mode(),
 run_multi_channel_mode(), _is_headless(), and _check_extras_installed().
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import importlib.util
@@ -16,9 +14,6 @@ import webbrowser
 from pocketpaw.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
-
-# Platforms that always have a display (never headless)
-_DISPLAY_PLATFORMS: frozenset[str] = frozenset({"darwin", "win32"})
 
 
 async def run_telegram_mode(settings: Settings) -> None:
@@ -251,7 +246,7 @@ def _is_headless() -> bool:
     """Detect headless server (no display)."""
     import os
 
-    if sys.platform in _DISPLAY_PLATFORMS:
+    if sys.platform in ("darwin", "win32"):
         return False  # macOS and Windows always have a display
     return not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")
 

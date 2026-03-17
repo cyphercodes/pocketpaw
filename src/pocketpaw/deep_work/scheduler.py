@@ -8,20 +8,17 @@
 # - get_ready_tasks: finds tasks with all blockers satisfied (DONE or SKIPPED)
 # - on_task_completed: auto-dispatches newly unblocked tasks
 # - validate_graph: cycle detection via Kahn's algorithm (works with Task and TaskSpec)
-
-from __future__ import annotations
-
 # - get_execution_order: groups tasks by dependency level (works with Task and TaskSpec)
+
 import asyncio
 import logging
 from collections import deque
 
-from pocketpaw.mission_control.models import Task, TaskStatus, now_iso
+from pocketpaw.mission_control.models import DONE_STATUSES, Task, TaskStatus, now_iso
 
 logger = logging.getLogger(__name__)
 
-# Frozensets for O(1) membership tests used in hot loops
-_DONE_STATUSES: frozenset[TaskStatus] = frozenset({TaskStatus.DONE, TaskStatus.SKIPPED})
+# Frozenset for O(1) membership tests used in hot loops
 _PENDING_STATUSES: frozenset[TaskStatus] = frozenset({TaskStatus.INBOX, TaskStatus.ASSIGNED})
 
 
@@ -73,7 +70,7 @@ class DependencyScheduler:
         """
         project_tasks = await self.manager.get_project_tasks(project_id)
         resolved_ids = {
-            t.id for t in project_tasks if t.status in _DONE_STATUSES
+            t.id for t in project_tasks if t.status in DONE_STATUSES
         }
 
         ready = []
@@ -158,7 +155,7 @@ class DependencyScheduler:
         if not project_tasks:
             return False
 
-        all_done = all(t.status in _DONE_STATUSES for t in project_tasks)
+        all_done = all(t.status in DONE_STATUSES for t in project_tasks)
         if all_done:
             project = await self.manager.get_project(project_id)
             if project:

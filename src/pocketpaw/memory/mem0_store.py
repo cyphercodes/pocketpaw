@@ -8,10 +8,8 @@
 # - Vector-based semantic search (Qdrant/Chroma)
 # - LLM-powered fact extraction and consolidation
 # - Memory evolution (updates existing memories instead of duplicating)
-
-from __future__ import annotations
-
 # - Configurable LLM (Anthropic/OpenAI/Ollama) and embedder providers
+
 import asyncio
 import logging
 from datetime import UTC, datetime

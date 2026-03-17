@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Sessions"], dependencies=[Depends(require_scope("sessions"))])
 
-# Supported session export formats
-_EXPORT_FORMATS: frozenset[str] = frozenset({"json", "md"})
+# Supported session export formats (shared with dashboard.py)
+EXPORT_FORMATS: frozenset[str] = frozenset({"json", "md"})
 
 
 @router.post("/sessions", response_model=SessionCreateResponse)
@@ -157,7 +157,7 @@ async def export_session(session_id: str, format: str = Query("json")):
 
     from pocketpaw.memory import get_memory_manager
 
-    if format not in _EXPORT_FORMATS:
+    if format not in EXPORT_FORMATS:
         raise HTTPException(status_code=400, detail="Format must be 'json' or 'md'")
 
     manager = get_memory_manager()

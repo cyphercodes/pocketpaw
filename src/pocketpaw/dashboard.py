@@ -24,8 +24,6 @@ Changes:
   - 2026-02-02: Enhanced logging to show which backend is processing requests.
 """
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import io
@@ -49,6 +47,7 @@ except ImportError as _exc:
 
 import pocketpaw.dashboard_state as _state
 from pocketpaw.api.v1 import mount_v1_routers
+from pocketpaw.api.v1.sessions import EXPORT_FORMATS
 from pocketpaw.bootstrap import DefaultBootstrapProvider
 from pocketpaw.config import Settings, get_access_token, get_config_path
 from pocketpaw.dashboard_auth import (
@@ -111,9 +110,6 @@ logger = logging.getLogger(__name__)
 _uvicorn_server = None
 # Flag indicating a restart was requested (vs normal shutdown / Ctrl+C)
 _restart_requested = False
-
-# Supported session export formats
-_EXPORT_FORMATS: frozenset[str] = frozenset({"json", "md"})
 
 # Get frontend directory
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -1332,7 +1328,7 @@ async def export_session(id: str = "", format: str = "json"):
     if not id:
         raise HTTPException(status_code=400, detail="Missing required parameter: id")
 
-    if format not in _EXPORT_FORMATS:
+    if format not in EXPORT_FORMATS:
         raise HTTPException(status_code=400, detail="Format must be 'json' or 'md'")
 
     manager = get_memory_manager()
