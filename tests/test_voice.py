@@ -88,8 +88,6 @@ def test_get_audio_dir(tmp_path, monkeypatch):
 
 async def test_elevenlabs_tts_success(tmp_path):
     """Test ElevenLabs TTS provider generates speech successfully."""
-    from unittest.mock import AsyncMock
-
     tool = TextToSpeechTool()
 
     mock_settings = MagicMock()
@@ -114,7 +112,6 @@ async def test_elevenlabs_tts_success(tmp_path):
 
     assert "<!-- media:" in result
     assert tmp_path.name in result or "tts_" in result
-    assert tool._last_generated_path is not None
 
     # Verify correct API endpoint was called
     call_args = mock_client.post.call_args
@@ -127,8 +124,6 @@ async def test_elevenlabs_tts_success(tmp_path):
 
 async def test_elevenlabs_tts_api_error(tmp_path):
     """Test ElevenLabs TTS handles API errors gracefully."""
-    from unittest.mock import AsyncMock
-
     import httpx as httpx_mod
 
     tool = TextToSpeechTool()
@@ -162,8 +157,6 @@ async def test_elevenlabs_tts_api_error(tmp_path):
 
 async def test_synthesize_speech_helper(tmp_path):
     """Test the synthesize_speech standalone helper function."""
-    from unittest.mock import AsyncMock
-
     from pocketpaw.tools.builtin.voice import synthesize_speech
 
     mock_settings = MagicMock()

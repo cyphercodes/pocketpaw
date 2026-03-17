@@ -1,4 +1,4 @@
-# Speech-to-Text tool — transcribe audio via OpenAI Whisper API.
+# Speech-to-Text tool — transcribe audio via OpenAI, ElevenLabs, or Sarvam APIs.
 # Created: 2026-02-09
 # Part of Phase 4 Media Integrations
 
@@ -23,7 +23,7 @@ def _get_transcripts_dir() -> Path:
 
 
 class SpeechToTextTool(BaseTool):
-    """Transcribe audio files to text using OpenAI Whisper API."""
+    """Transcribe audio files to text using configurable STT providers."""
 
     @property
     def name(self) -> str:
@@ -139,15 +139,15 @@ class SpeechToTextTool(BaseTool):
             return self._error(f"Whisper API error: {e.response.status_code}")
         except Exception as e:
             return self._error(f"Transcription failed: {e}")
-    
+
     async def _stt_elevenlabs(self, audio_path: Path, language: str | None) -> str:
         """Transcribe via ElevenLabs STT API."""
-        
+
         settings = get_settings()
         api_key = settings.elevenlabs_api_key
         if not api_key:
             return self._error("ElevenLabs API key not configured. Set POCKETPAW_ELEVENLABS_API_KEY.")
-        
+
         # stt_model is the frontend-controlled generic field; fall back to the dedicated field
         model = settings.stt_model
         try:
@@ -166,15 +166,15 @@ class SpeechToTextTool(BaseTool):
                     resp.raise_for_status()
             result = resp.json()
             text = result.get("text", "")
-            
+
             if not text.strip():
                 return "Transcription completed but no speech was detected in the audio."
-            
+
             filename = f"stt_{uuid.uuid4().hex[:8]}.txt"
             output_path = _get_transcripts_dir() / filename
             output_path.write_text(text, encoding="utf-8")
             return f"Transcription ({audio_path.name}):\n\n{text}\n\nSaved to: {output_path}"
-        
+
         except httpx.HTTPStatusError as e:
             return self._error(f"ElevenLabs STT API error: {e.response.status_code}")
         except Exception as e:
