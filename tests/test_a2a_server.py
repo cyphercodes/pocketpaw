@@ -60,6 +60,7 @@ from pocketpaw.a2a.server import (
     _A2ASessionBridge,
     _cancel_events,
     _check_a2a_enabled,
+    _extract_message_text,
     _format_sse,
     _tasks,
     jsonrpc_router,
@@ -211,6 +212,12 @@ class TestModels:
             ],
         )
         assert len(card.supported_interfaces) == 1
+
+    def test_agent_card_has_protocol_version(self):
+        card = AgentCard(name="Test", description="Test", url="http://localhost", version="1.0")
+        dumped = card.model_dump(mode="json")
+        assert "protocol_version" in dumped
+        assert dumped["protocol_version"] == "0.2.5"
 
     def test_agent_skill(self):
         skill = AgentSkill(id="test", name="Test Skill", description="A test skill")
@@ -1012,6 +1019,54 @@ class TestJSONRPCEndpoint:
         assert data["result"]["status"]["state"] == "working"
 
     @pytest.mark.asyncio
+    async def test_tasks_get_respects_history_length(self, client):
+        _tasks["hist-task"] = Task(
+            id="hist-task",
+            status=TaskStatus(state=TaskState.WORKING),
+            history=[
+                A2AMessage(role="user", parts=[TextPart(text="msg1")]),
+                A2AMessage(role="agent", parts=[TextPart(text="reply1")]),
+                A2AMessage(role="user", parts=[TextPart(text="msg2")]),
+                A2AMessage(role="agent", parts=[TextPart(text="reply2")]),
+            ],
+        )
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tasks/get",
+            "params": {"id": "hist-task", "history_length": 2},
+        }
+        resp = await client.post("/a2a", json=payload)
+        body = resp.json()
+        result = body["result"]
+        assert len(result["history"]) == 2
+        # Should return the LAST 2 messages
+        assert result["history"][0]["parts"][0]["text"] == "msg2"
+        assert result["history"][1]["parts"][0]["text"] == "reply2"
+
+    @pytest.mark.asyncio
+    async def test_tasks_get_history_length_zero(self, client):
+        _tasks["hist-task-0"] = Task(
+            id="hist-task-0",
+            status=TaskStatus(state=TaskState.WORKING),
+            history=[
+                A2AMessage(role="user", parts=[TextPart(text="msg1")]),
+            ],
+        )
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tasks/get",
+            "params": {"id": "hist-task-0", "history_length": 0},
+        }
+        resp = await client.post("/a2a", json=payload)
+        body = resp.json()
+        result = body["result"]
+        assert result["history"] == []
+
+    @pytest.mark.asyncio
     async def test_jsonrpc_tasks_cancel(self, client):
         task = Task(id="rpc-cancel", status=TaskStatus(state=TaskState.WORKING))
         _tasks["rpc-cancel"] = task
@@ -1074,6 +1129,33 @@ class TestJSONRPCEndpoint:
         data = resp.json()
         assert data["error"]["code"] == UNSUPPORTED_OPERATION
 
+    @pytest.mark.asyncio
+    async def test_message_send_rejects_terminal_task(self, client):
+        """Sending to a completed task must return a JSON-RPC error."""
+        from pocketpaw.a2a.server import _tasks as tasks_store
+
+        tasks_store["terminal-task"] = Task(
+            id="terminal-task",
+            status=TaskStatus(
+                state=TaskState.COMPLETED,
+                message=A2AMessage(role="agent", parts=[TextPart(text="Done")]),
+            ),
+        )
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "message/send",
+            "params": {
+                "id": "terminal-task",
+                "message": {"role": "user", "parts": [{"type": "text", "text": "More?"}]},
+            },
+        }
+        resp = await client.post("/a2a", json=payload)
+        body = resp.json()
+        assert "error" in body
+        assert body["error"]["code"] == -32003
+
     @patch("pocketpaw.a2a.server._dispatch_to_agent")
     @patch("pocketpaw.a2a.server._A2ASessionBridge")
     async def test_jsonrpc_message_stream_returns_sse(self, mock_bridge_cls, mock_dispatch, client):
@@ -1120,6 +1202,130 @@ class TestJSONRPCEndpoint:
             assert data_line is not None
             parsed = json.loads(data_line.split(":", 1)[1].strip())
             assert parsed["jsonrpc"] == "2.0"
+
+    @pytest.mark.asyncio
+    async def test_jsonrpc_tasks_resubscribe_not_found(self, client):
+        """Resubscribing to a nonexistent task should error."""
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tasks/resubscribe",
+            "params": {"id": "nonexistent"},
+        }
+        # tasks/resubscribe is a streaming method; the SSE stream should contain an error
+        async with client.stream("POST", "/a2a", json=payload) as resp:
+            raw = await resp.aread()
+            raw = raw.decode()
+        # Parse the SSE data
+        for line in raw.split("\n"):
+            if line.startswith("data:"):
+                body = json.loads(line.split(":", 1)[1].strip())
+                assert "error" in body
+                assert body["error"]["code"] == TASK_NOT_FOUND
+                break
+        else:
+            pytest.fail("No SSE data line found in response")
+
+    @pytest.mark.asyncio
+    async def test_jsonrpc_tasks_resubscribe_terminal_returns_final(self, client):
+        """Resubscribing to a completed task should return its final status."""
+        _tasks["resub-done"] = Task(
+            id="resub-done",
+            status=TaskStatus(
+                state=TaskState.COMPLETED,
+                message=A2AMessage(role="agent", parts=[TextPart(text="All done")]),
+            ),
+        )
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tasks/resubscribe",
+            "params": {"id": "resub-done"},
+        }
+        async with client.stream("POST", "/a2a", json=payload) as resp:
+            assert resp.status_code == 200
+            assert "text/event-stream" in resp.headers.get("content-type", "")
+            raw = await resp.aread()
+            raw = raw.decode()
+
+        # Should have exactly one SSE event with the final status
+        events = [e.strip() for e in raw.split("\n\n") if e.strip()]
+        assert len(events) >= 1
+        data_line = next((line for line in events[0].split("\n") if line.startswith("data:")), None)
+        assert data_line is not None
+        parsed = json.loads(data_line.split(":", 1)[1].strip())
+        assert parsed["jsonrpc"] == "2.0"
+        result = parsed["result"]
+        assert result["status"]["state"] == "completed"
+        assert result["final"] is True
+
+    @pytest.mark.asyncio
+    async def test_message_send_rejects_unsupported_output_modes(self, client):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "message/send",
+            "params": {
+                "message": {"role": "user", "parts": [{"type": "text", "text": "Hi"}]},
+                "configuration": {
+                    "accepted_output_modes": ["video/mp4"],
+                },
+            },
+        }
+        resp = await client.post("/a2a", json=payload)
+        body = resp.json()
+        assert "error" in body
+        assert body["error"]["code"] == -32005
+
+    @patch("pocketpaw.a2a.server._dispatch_to_agent")
+    @patch("pocketpaw.a2a.server._A2ASessionBridge")
+    async def test_message_send_accepts_compatible_output_modes(
+        self, mock_bridge_cls, mock_dispatch, client
+    ):
+        bridge = MagicMock()
+        q = asyncio.Queue()
+        bridge.queue = q
+        bridge.start = AsyncMock()
+        bridge.stop = AsyncMock()
+        mock_bridge_cls.return_value = bridge
+        mock_dispatch.return_value = "a2a:compat-modes"
+
+        async def _load():
+            await q.put({"type": "chunk", "content": "OK"})
+            await q.put({"type": "stream_end"})
+
+        await _load()
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "message/send",
+            "params": {
+                "message": {"role": "user", "parts": [{"type": "text", "text": "Hi"}]},
+                "configuration": {
+                    "accepted_output_modes": ["text/plain", "application/json"],
+                },
+            },
+        }
+        resp = await client.post("/a2a", json=payload)
+        body = resp.json()
+        # Should NOT have an error about output modes
+        if "error" in body:
+            assert body["error"]["code"] != -32005
+
+
+# ---------------------------------------------------------------------------
+# Tests: MessageSendConfiguration model
+# ---------------------------------------------------------------------------
+
+
+def test_message_send_configuration_model():
+    from pocketpaw.a2a.models import MessageSendConfiguration
+
+    config = MessageSendConfiguration(accepted_output_modes=["text/plain", "application/json"])
+    assert config.accepted_output_modes == ["text/plain", "application/json"]
+    assert config.history_length is None
+    assert config.blocking is False
 
 
 # ---------------------------------------------------------------------------
@@ -1177,3 +1383,35 @@ class TestChannelEnum:
         from pocketpaw.bus.events import Channel
 
         assert Channel.A2A != Channel.WEBSOCKET
+
+
+# ---------------------------------------------------------------------------
+# Tests: _extract_message_text
+# ---------------------------------------------------------------------------
+
+
+def test_extract_message_text_all_part_types():
+    """_extract_message_text should handle TextPart, FilePart, and DataPart."""
+    msg = A2AMessage(
+        role="user",
+        parts=[
+            TextPart(text="Check this file"),
+            FilePart(name="report.csv", uri="https://example.com/report.csv"),
+            DataPart(data={"key": "value", "count": 42}),
+        ],
+    )
+    text = _extract_message_text(msg)
+    assert "Check this file" in text
+    assert "report.csv" in text
+    assert "https://example.com/report.csv" in text
+    assert '"key"' in text
+
+
+def test_extract_message_text_embedded_file():
+    msg = A2AMessage(
+        role="user",
+        parts=[FilePart(name="data.bin", bytes_data="AQID")],
+    )
+    text = _extract_message_text(msg)
+    assert "data.bin" in text
+    assert "embedded" in text

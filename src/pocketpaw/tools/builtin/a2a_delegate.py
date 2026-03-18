@@ -158,14 +158,24 @@ class A2ADelegateTool(BaseTool):
 
         status_state = result_task.status.state.value
 
-        return self._success(
-            json.dumps(
+        # Build response with artifacts if present
+        response_data: dict[str, Any] = {
+            "agent_name": card.name,
+            "task_id": result_task.id,
+            "status": status_state,
+            "reply": agent_reply,
+        }
+
+        if result_task.artifacts:
+            response_data["artifacts"] = [
                 {
-                    "agent_name": card.name,
-                    "task_id": result_task.id,
-                    "status": status_state,
-                    "reply": agent_reply,
-                },
-                indent=2,
-            )
-        )
+                    "name": artifact.name,
+                    "description": artifact.description,
+                    "content": " ".join(
+                        part.text for part in artifact.parts if hasattr(part, "text")
+                    ),
+                }
+                for artifact in result_task.artifacts
+            ]
+
+        return self._success(json.dumps(response_data, indent=2))

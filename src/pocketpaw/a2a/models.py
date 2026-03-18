@@ -147,6 +147,14 @@ class Task(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class MessageSendConfiguration(BaseModel):
+    """Configuration for message/send requests per A2A v0.2.5 spec."""
+
+    accepted_output_modes: list[str] = Field(default=["text/plain"])
+    history_length: int | None = None
+    blocking: bool = False
+
+
 class TaskSendParams(BaseModel):
     """Parameters for message/send and tasks/send."""
 
@@ -154,12 +162,21 @@ class TaskSendParams(BaseModel):
     context_id: str | None = None
     session_id: str | None = None
     message: A2AMessage
+    configuration: MessageSendConfiguration | None = None
     # PocketPaw extension: structured conversation history (preserves role/turn
     # boundaries). Pass prior A2AMessage objects here rather than flattening their
     # parts into the current message. The remote agent needs to distinguish its own
     # previous responses from user turns. Not part of the base A2A spec; remote
     # agents that don't understand this field will simply ignore it.
     history: list[A2AMessage] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskQueryParams(BaseModel):
+    """Parameters for tasks/get per A2A v0.2.5 spec."""
+
+    id: str
+    history_length: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -194,6 +211,7 @@ class AgentCard(BaseModel):
     description: str
     url: str
     version: str
+    protocol_version: str = "0.2.5"
     provider: dict[str, Any] | None = None
     capabilities: AgentCapabilities = Field(default_factory=AgentCapabilities)
     skills: list[AgentSkill] = Field(default_factory=list)

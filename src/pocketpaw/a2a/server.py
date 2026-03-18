@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time as _time
+import uuid
 from datetime import UTC, datetime
 from importlib.metadata import version as _pkg_version
 from typing import Any
@@ -29,6 +31,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pocketpaw.a2a.errors import (
     TASK_NOT_CANCELABLE,
     TASK_NOT_FOUND,
+    TASK_NOT_MODIFIABLE,
     UNSUPPORTED_OPERATION,
     JSONRPCError,
     json_rpc_success_response,
@@ -60,6 +63,24 @@ logger = logging.getLogger(__name__)
 _MAX_TASKS = 1000
 _tasks: dict[str, Task] = {}
 _cancel_events: dict[str, asyncio.Event] = {}  # task_id -> cancellation flag
+
+# ---------------------------------------------------------------------------
+# Agent card cache (avoids rebuilding skill list from tool registry each time)
+# ---------------------------------------------------------------------------
+_agent_card_cache: dict[str, tuple[float, dict]] = {}
+_CARD_CACHE_TTL = 30.0
+
+
+def _get_agent_card_cached(base_url: str) -> dict:
+    """Return cached agent card dict, rebuilding if stale."""
+    now = _time.monotonic()
+    cached = _agent_card_cache.get(base_url)
+    if cached and (now - cached[0]) < _CARD_CACHE_TTL:
+        return cached[1]
+    card = _build_agent_card(base_url)
+    card_dict = card.model_dump(mode="json")
+    _agent_card_cache[base_url] = (now, card_dict)
+    return card_dict
 
 
 def _store_task(task: Task) -> None:
@@ -136,7 +157,7 @@ def _build_agent_card(base_url: str) -> AgentCard:
                 )
             )
     except Exception:
-        pass
+        logger.warning("Failed to load tools for A2A agent card", exc_info=True)
 
     # Fallback if no tools registered
     if not skills:
@@ -247,6 +268,29 @@ class _A2ASessionBridge:
             bus.unsubscribe_system(self._system_cb)
 
 
+def _extract_message_text(message: A2AMessage) -> str:
+    """Extract a text representation from all part types in a message.
+
+    TextPart: use text directly.
+    FilePart: include file name and URI/byte indicator.
+    DataPart: serialize data as compact JSON.
+    """
+    segments: list[str] = []
+    for part in message.parts:
+        if hasattr(part, "text"):
+            segments.append(part.text)
+        elif hasattr(part, "uri") or hasattr(part, "bytes_data"):
+            name = getattr(part, "name", None) or "unnamed_file"
+            uri = getattr(part, "uri", None)
+            if uri:
+                segments.append(f"[File: {name} at {uri}]")
+            else:
+                segments.append(f"[File: {name} (embedded)]")
+        elif hasattr(part, "data"):
+            segments.append(json.dumps(part.data, separators=(",", ":")))
+    return " ".join(segments)
+
+
 async def _dispatch_to_agent(task_id: str, message: A2AMessage) -> str:
     """Publish an inbound message onto the bus and return the chat_id."""
     from pocketpaw.bus import get_message_bus
@@ -254,7 +298,7 @@ async def _dispatch_to_agent(task_id: str, message: A2AMessage) -> str:
 
     # Use task_id as the stable chat_id so session context is maintained
     chat_id = f"a2a:{task_id}"
-    text = " ".join(part.text for part in message.parts if hasattr(part, "text"))
+    text = _extract_message_text(message)
 
     msg = InboundMessage(
         channel=Channel.A2A,
@@ -283,6 +327,31 @@ async def _core_message_send(params: dict[str, Any]) -> dict[str, Any]:
     """Core logic for message/send (non-streaming). Returns task dict."""
     send_params = TaskSendParams(**params)
     task_id = send_params.id
+
+    # Reject if task exists in a terminal state (spec: terminal states are immutable)
+    existing = _tasks.get(task_id)
+    if existing is not None:
+        terminal = {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELED, TaskState.REJECTED}
+        if existing.status.state in terminal:
+            raise JSONRPCError(
+                TASK_NOT_MODIFIABLE,
+                f"Task '{task_id}' is in terminal state '{existing.status.state}' "
+                "and cannot accept new messages",
+            )
+
+    # Validate accepted output modes if specified
+    if send_params.configuration and send_params.configuration.accepted_output_modes:
+        supported = {"text/plain"}
+        requested = set(send_params.configuration.accepted_output_modes)
+        if not requested & supported:
+            from pocketpaw.a2a.errors import INCOMPATIBLE_OUTPUT_MODES
+
+            raise JSONRPCError(
+                INCOMPATIBLE_OUTPUT_MODES,
+                f"None of the requested output modes are supported. "
+                f"Supported: {sorted(supported)}, requested: {sorted(requested)}",
+            )
+
     chat_id = f"a2a:{task_id}"
     timeout = _get_task_timeout()
 
@@ -319,6 +388,7 @@ async def _core_message_send(params: dict[str, Any]) -> dict[str, Any]:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
             except Exception:
+                logger.exception("Unexpected error waiting for task %s", task_id)
                 finished = set()
 
             if not finished:  # timeout
@@ -383,6 +453,19 @@ async def _core_message_stream(params: dict[str, Any], request_id: int | str | N
     chat_id = f"a2a:{task_id}"
     timeout = _get_task_timeout()
 
+    # Validate accepted output modes if specified
+    if send_params.configuration and send_params.configuration.accepted_output_modes:
+        supported = {"text/plain"}
+        requested = set(send_params.configuration.accepted_output_modes)
+        if not requested & supported:
+            from pocketpaw.a2a.errors import INCOMPATIBLE_OUTPUT_MODES
+
+            raise JSONRPCError(
+                INCOMPATIBLE_OUTPUT_MODES,
+                f"None of the requested output modes are supported. "
+                f"Supported: {sorted(supported)}, requested: {sorted(requested)}",
+            )
+
     cancel_event = asyncio.Event()
     _cancel_events[task_id] = cancel_event
 
@@ -423,10 +506,11 @@ async def _core_message_stream(params: dict[str, Any], request_id: int | str | N
 
         # Stream content chunks
         accumulated: list[str] = []
-        max_duration = timeout
-        elapsed = 0.0
+        deadline = _time.monotonic() + timeout
+        response_artifact_id = uuid.uuid4().hex
         while not cancel_event.is_set():
-            if elapsed >= max_duration:
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
                 agent_reply = A2AMessage(
                     role="agent",
                     parts=[TextPart(text=f"Task timed out after {int(timeout)} seconds.")],
@@ -443,9 +527,8 @@ async def _core_message_stream(params: dict[str, Any], request_id: int | str | N
                 break
 
             try:
-                event = await asyncio.wait_for(bridge.queue.get(), timeout=1.0)
+                event = await asyncio.wait_for(bridge.queue.get(), timeout=min(remaining, 1.0))
             except TimeoutError:
-                elapsed += 1.0
                 continue
 
             if event["type"] == "chunk":
@@ -453,6 +536,7 @@ async def _core_message_stream(params: dict[str, Any], request_id: int | str | N
                 accumulated.append(chunk_text)
                 # Emit artifact update per chunk
                 chunk_artifact = Artifact(
+                    artifact_id=response_artifact_id,
                     name="response",
                     parts=[TextPart(text=chunk_text)],
                 )
@@ -469,6 +553,7 @@ async def _core_message_stream(params: dict[str, Any], request_id: int | str | N
                 full_text = "".join(accumulated)
                 # Final artifact event
                 final_artifact = Artifact(
+                    artifact_id=response_artifact_id,
                     name="response",
                     description="Agent response",
                     parts=[TextPart(text=full_text)],
@@ -522,12 +607,18 @@ async def _core_message_stream(params: dict[str, Any], request_id: int | str | N
         _cancel_events.pop(task_id, None)
 
 
-async def _core_tasks_get(task_id: str) -> dict[str, Any]:
+async def _core_tasks_get(task_id: str, history_length: int | None = None) -> dict[str, Any]:
     """Core logic for tasks/get. Returns task dict or raises JSONRPCError."""
     task = _tasks.get(task_id)
     if task is None:
         raise JSONRPCError(TASK_NOT_FOUND, f"Task '{task_id}' not found")
-    return task.model_dump(mode="json")
+    result = task.model_dump(mode="json")
+    if history_length is not None:
+        if history_length == 0:
+            result["history"] = []
+        else:
+            result["history"] = result["history"][-history_length:]
+    return result
 
 
 async def _core_tasks_cancel(task_id: str) -> dict[str, Any]:
@@ -554,6 +645,109 @@ async def _core_tasks_cancel(task_id: str) -> dict[str, Any]:
     return {"id": task_id, "status": "canceled"}
 
 
+async def _core_tasks_resubscribe(params: dict[str, Any], request_id: int | str | None = None):
+    """Core logic for tasks/resubscribe. Yields current state, then live updates if active."""
+    task_id = params.get("id") or params.get("task_id")
+    if not task_id:
+        raise JSONRPCError(-32602, "Missing required parameter: id")
+
+    task = _tasks.get(task_id)
+    if task is None:
+        raise JSONRPCError(TASK_NOT_FOUND, f"Task '{task_id}' not found")
+
+    terminal = {TaskState.COMPLETED, TaskState.FAILED, TaskState.CANCELED, TaskState.REJECTED}
+
+    # Emit current status
+    status_event = TaskStatusUpdateEvent(
+        task_id=task_id,
+        context_id=task.context_id,
+        status=task.status,
+        final=task.status.state in terminal,
+    )
+    yield json_rpc_success_response(request_id, status_event.model_dump(mode="json"))
+
+    # If already terminal, nothing more to stream
+    if task.status.state in terminal:
+        return
+
+    # Subscribe to live updates via bridge
+    chat_id = f"a2a:{task_id}"
+    bridge = _A2ASessionBridge(chat_id)
+    await bridge.start()
+    timeout = _get_task_timeout()
+
+    try:
+        accumulated: list[str] = []
+        deadline = _time.monotonic() + timeout
+        response_artifact_id = uuid.uuid4().hex
+        while True:
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                event = await asyncio.wait_for(bridge.queue.get(), timeout=min(remaining, 1.0))
+            except TimeoutError:
+                # Check if task was completed by another path
+                current = _tasks.get(task_id)
+                if current and current.status.state in terminal:
+                    final_event = TaskStatusUpdateEvent(
+                        task_id=task_id,
+                        context_id=task.context_id,
+                        status=current.status,
+                        final=True,
+                    )
+                    yield json_rpc_success_response(request_id, final_event.model_dump(mode="json"))
+                    return
+                continue
+
+            if event["type"] == "chunk":
+                chunk_text = event.get("content", "")
+                accumulated.append(chunk_text)
+                chunk_artifact = Artifact(
+                    artifact_id=response_artifact_id,
+                    name="response",
+                    parts=[TextPart(text=chunk_text)],
+                )
+                artifact_event = TaskArtifactUpdateEvent(
+                    task_id=task_id,
+                    context_id=task.context_id,
+                    artifact=chunk_artifact,
+                    append=True,
+                    last_chunk=False,
+                )
+                yield json_rpc_success_response(request_id, artifact_event.model_dump(mode="json"))
+
+            elif event["type"] == "stream_end":
+                full_text = "".join(accumulated)
+                completed_msg = A2AMessage(role="agent", parts=[TextPart(text=full_text)])
+                completed_status = TaskStatus(state=TaskState.COMPLETED, message=completed_msg)
+                completed_event = TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=task.context_id,
+                    status=completed_status,
+                    final=True,
+                )
+                yield json_rpc_success_response(request_id, completed_event.model_dump(mode="json"))
+                return
+
+            elif event["type"] == "error":
+                err_msg = A2AMessage(
+                    role="agent",
+                    parts=[TextPart(text=event.get("message", "Agent error"))],
+                )
+                err_status = TaskStatus(state=TaskState.FAILED, message=err_msg)
+                err_event = TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=task.context_id,
+                    status=err_status,
+                    final=True,
+                )
+                yield json_rpc_success_response(request_id, err_event.model_dump(mode="json"))
+                return
+    finally:
+        await bridge.stop()
+
+
 # ---------------------------------------------------------------------------
 # JSON-RPC 2.0 dispatcher setup
 # ---------------------------------------------------------------------------
@@ -574,7 +768,8 @@ async def _jsonrpc_tasks_get(params: dict[str, Any], request_id: int | str | Non
     task_id = params.get("id") or params.get("task_id")
     if not task_id:
         raise JSONRPCError(-32602, "Missing required parameter: id")
-    return await _core_tasks_get(task_id)
+    history_length = params.get("history_length")
+    return await _core_tasks_get(task_id, history_length=history_length)
 
 
 async def _jsonrpc_tasks_cancel(params: dict[str, Any], request_id: int | str | None):
@@ -582,6 +777,11 @@ async def _jsonrpc_tasks_cancel(params: dict[str, Any], request_id: int | str | 
     if not task_id:
         raise JSONRPCError(-32602, "Missing required parameter: id")
     return await _core_tasks_cancel(task_id)
+
+
+async def _jsonrpc_tasks_resubscribe(params: dict[str, Any], request_id: int | str | None):
+    async for event in _core_tasks_resubscribe(params, request_id):
+        yield event
 
 
 async def _jsonrpc_push_notification_set(params: dict[str, Any], request_id: int | str | None):
@@ -596,6 +796,7 @@ _dispatcher.register("message/send", _jsonrpc_message_send)
 _dispatcher.register_stream("message/stream", _jsonrpc_message_stream)
 _dispatcher.register("tasks/get", _jsonrpc_tasks_get)
 _dispatcher.register("tasks/cancel", _jsonrpc_tasks_cancel)
+_dispatcher.register_stream("tasks/resubscribe", _jsonrpc_tasks_resubscribe)
 _dispatcher.register("tasks/pushNotificationConfig/set", _jsonrpc_push_notification_set)
 _dispatcher.register("tasks/pushNotificationConfig/get", _jsonrpc_push_notification_get)
 
@@ -609,16 +810,14 @@ _dispatcher.register("tasks/pushNotificationConfig/get", _jsonrpc_push_notificat
 async def get_agent_card(request: Request):
     """Return the A2A Agent Card describing PocketPaw's capabilities."""
     base_url = str(request.base_url).rstrip("/")
-    card = _build_agent_card(base_url)
-    return JSONResponse(content=card.model_dump(mode="json"))
+    return JSONResponse(content=_get_agent_card_cached(base_url))
 
 
 @well_known_router.get("/.well-known/agent-card.json", response_class=JSONResponse)
 async def get_agent_card_alias(request: Request):
     """Alias for the spec-correct agent-card.json path."""
     base_url = str(request.base_url).rstrip("/")
-    card = _build_agent_card(base_url)
-    return JSONResponse(content=card.model_dump(mode="json"))
+    return JSONResponse(content=_get_agent_card_cached(base_url))
 
 
 # ---------------------------------------------------------------------------
@@ -712,13 +911,19 @@ async def tasks_send_stream(params: TaskSendParams):
 # ---------------------------------------------------------------------------
 
 
-@tasks_router.get("/{task_id}", response_model=Task)
-async def tasks_get(task_id: str):
+@tasks_router.get("/{task_id}")
+async def tasks_get(task_id: str, history_length: int | None = None):
     """Poll the current status of a previously submitted task."""
     task = _tasks.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
-    return task
+    result = task.model_dump(mode="json")
+    if history_length is not None:
+        if history_length == 0:
+            result["history"] = []
+        else:
+            result["history"] = result["history"][-history_length:]
+    return JSONResponse(content=result)
 
 
 # ---------------------------------------------------------------------------

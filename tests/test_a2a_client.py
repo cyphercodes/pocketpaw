@@ -11,6 +11,7 @@ from pocketpaw.a2a.client import A2AClient, _check_status, _handle_response
 from pocketpaw.a2a.models import (
     A2AMessage,
     AgentCard,
+    Artifact,
     Task,
     TaskSendParams,
     TaskState,
@@ -218,6 +219,66 @@ class TestA2AClient:
             MockHttpxClient.assert_called_once()
             assert mock_httpx_client.aclose.called, "Shared client should be closed on exit"
 
+    async def test_agent_card_cached_on_second_call(self, mock_agent_card):
+        """Second call to get_agent_card should use cache, not HTTP."""
+        client = A2AClient()
+        mock_response = AsyncMock(spec=httpx.Response)
+        mock_response.content = mock_agent_card.model_dump_json().encode()
+
+        mock_client_instance = AsyncMock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_instance.__aenter__.return_value = mock_client_instance
+
+        with patch("httpx.AsyncClient", return_value=mock_client_instance):
+            card1 = await client.get_agent_card("http://localhost:8001")
+            card2 = await client.get_agent_card("http://localhost:8001")
+            assert card1.name == card2.name
+            # HTTP GET should only be called once (second was cached)
+            assert mock_client_instance.get.call_count == 1
+
+    async def test_auth_headers_passed_to_requests(self, mock_agent_card):
+        """Auth headers should be included in HTTP requests."""
+        client = A2AClient(auth_headers={"Authorization": "Bearer test-token"})
+        mock_response = AsyncMock(spec=httpx.Response)
+        mock_response.content = mock_agent_card.model_dump_json().encode()
+
+        mock_client_instance = AsyncMock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_instance.__aenter__.return_value = mock_client_instance
+
+        with patch("httpx.AsyncClient", return_value=mock_client_instance) as MockHttpxClient:
+            await client.get_agent_card("http://localhost:8001")
+            # Verify auth headers were passed to AsyncClient constructor
+            call_kwargs = MockHttpxClient.call_args
+            assert call_kwargs.kwargs.get("headers") == {"Authorization": "Bearer test-token"}
+
+    async def test_send_task_handles_message_response(self):
+        """When remote agent returns a Message instead of Task, client wraps it."""
+        client = A2AClient()
+        params = TaskSendParams(
+            message=A2AMessage(role="user", parts=[TextPart(text="Quick question")])
+        )
+        message_response = {
+            "role": "agent",
+            "message_id": "msg-123",
+            "parts": [{"type": "text", "text": "Direct reply"}],
+        }
+
+        mock_response = AsyncMock(spec=httpx.Response)
+        mock_response.content = json.dumps(message_response).encode()
+
+        mock_client_instance = AsyncMock()
+        mock_client_instance.post.return_value = mock_response
+        mock_client_instance.__aenter__.return_value = mock_client_instance
+
+        with patch("httpx.AsyncClient", return_value=mock_client_instance):
+            result = await client.send_task("http://localhost:8001", params)
+            # Should return a Task wrapping the message
+            assert result.status.state == TaskState.COMPLETED
+            assert result.status.message is not None
+            assert result.status.message.parts[0].text == "Direct reply"
+            assert len(result.history) == 2
+
 
 class TestA2ADelegateTool:
     @pytest.fixture(autouse=True)
@@ -342,6 +403,53 @@ class TestA2ADelegateTool:
             assert result.startswith("Error:")
             assert "Failed to submit task" in result
             assert "Timeout" in result
+
+    async def test_delegate_tool_includes_artifacts(self, mock_agent_card):
+        tool = A2ADelegateTool()
+
+        task_with_artifacts = Task(
+            id="art-task",
+            session_id="s1",
+            status=TaskStatus(
+                state=TaskState.COMPLETED,
+                message=A2AMessage(role="agent", parts=[TextPart(text="Here's the report")]),
+            ),
+            artifacts=[
+                Artifact(
+                    name="report.csv",
+                    description="Generated report",
+                    parts=[TextPart(text="col1,col2\n1,2")],
+                )
+            ],
+        )
+
+        with patch("pocketpaw.tools.builtin.a2a_delegate.A2AClient") as MockClient:
+            mock_client = MockClient.return_value
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.get_agent_card = AsyncMock(return_value=mock_agent_card)
+            mock_client.send_task = AsyncMock(return_value=task_with_artifacts)
+
+            result = await tool.execute(agent_url="http://localhost:8001", task="Generate report")
+            parsed = json.loads(result)
+            assert "artifacts" in parsed
+            assert len(parsed["artifacts"]) == 1
+            assert parsed["artifacts"][0]["name"] == "report.csv"
+            assert "col1,col2" in parsed["artifacts"][0]["content"]
+
+    async def test_delegate_tool_no_artifacts_key_when_empty(self, mock_agent_card, mock_task):
+        tool = A2ADelegateTool()
+
+        with patch("pocketpaw.tools.builtin.a2a_delegate.A2AClient") as MockClient:
+            mock_client = MockClient.return_value
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.get_agent_card = AsyncMock(return_value=mock_agent_card)
+            mock_client.send_task = AsyncMock(return_value=mock_task)
+
+            result = await tool.execute(agent_url="http://localhost:8001", task="Help me")
+            parsed = json.loads(result)
+            assert "artifacts" not in parsed
 
 
 class TestSSRFProtection:

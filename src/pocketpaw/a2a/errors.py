@@ -21,7 +21,9 @@ INTERNAL_ERROR = -32603
 # ---------------------------------------------------------------------------
 TASK_NOT_FOUND = -32001
 TASK_NOT_CANCELABLE = -32002
+TASK_NOT_MODIFIABLE = -32003
 UNSUPPORTED_OPERATION = -32004
+INCOMPATIBLE_OUTPUT_MODES = -32005
 
 
 class JSONRPCError(Exception):
