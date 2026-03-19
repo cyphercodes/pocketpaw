@@ -821,6 +821,41 @@
             </div>
           </div>
 
+          <!-- Deep Agents Settings -->
+          <div
+            x-show="settings.agentBackend === 'deep_agents' && isCurrentBackendAvailable()"
+            x-transition
+            class="flex flex-col gap-3 pl-4 border-l-2 border-[var(--accent-color)]/30"
+          >
+            <p class="text-[11px] text-[var(--text-secondary)]/70">
+              Requires <code class="text-[var(--accent-color)]">pip install deepagents</code>.
+              Uses LangChain's <code class="text-[var(--accent-color)]">init_chat_model</code> for multi-provider support.
+            </p>
+            <div class="flex flex-col gap-1">
+              <label class="text-[12px] font-medium text-[var(--text-secondary)]">Model</label>
+              <input
+                type="text"
+                x-model="settings.deepAgentsModel"
+                @change="saveSettings()"
+                placeholder="anthropic:claude-sonnet-4-6"
+                class="w-full bg-black\30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all placeholder-white/40"
+              />
+              <small class="text-white/40 text-[10px]">
+                Format: provider:model (e.g. openai:gpt-4o, anthropic:claude-sonnet-4-6, google_genai:gemini-2.0-flash)
+              </small>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-[12px] font-medium text-[var(--text-secondary)]">Max Turns</label>
+              <input
+                type="number"
+                x-model="settings.deepAgentsMaxTurns"
+                @change="saveSettings()"
+                min="1" max="200"
+                class="w-full bg-black\30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all"
+              />
+            </div>
+          </div>
+
           <!-- OpenCode Settings -->
           <div
             x-show="settings.agentBackend === 'opencode' && isCurrentBackendAvailable()"

@@ -88,6 +88,9 @@ google-adk = [
 copilot-sdk = [
     "github-copilot-sdk>=0.1.0",
 ]
+deep-agents = [
+    "deepagents>=0.1.0",
+]
 litellm = [
     "litellm>=1.40.0",
 ]
@@ -202,7 +205,7 @@ all-tools = [
     "soul-protocol[engine]>=0.2.3",
 ]
 all-backends = [
-    "pocketpaw[openai-agents,google-adk,copilot-sdk,litellm]",
+    "pocketpaw[openai-agents,google-adk,copilot-sdk,deep-agents,litellm]",
 ]
 all = [
     # browser
@@ -236,6 +239,7 @@ all = [
     "openai-agents>=0.2.0",
     "google-adk>=1.0.0",
     "github-copilot-sdk>=0.1.0",
+    "deepagents>=0.1.0",
 ]
 dev = [
     # all deps (flattened from [all])
@@ -262,6 +266,7 @@ dev = [
     "openai-agents>=0.2.0",
     "google-adk>=1.0.0",
     "github-copilot-sdk>=0.1.0",
+    "deepagents>=0.1.0",
     # dev tools
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -324,6 +329,7 @@ dev = [
     "openai-agents>=0.2.0",
     "google-adk>=1.0.0",
     "github-copilot-sdk>=0.1.0",
+    "deepagents>=0.1.0",
     # dev tools
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
