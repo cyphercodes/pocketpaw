@@ -344,7 +344,7 @@ class AgentLoop:
             logger.info("Processing cancelled for session %s", session_key)
             raise
 
-    _WELCOME_EXCLUDED = frozenset({Channel.WEBSOCKET, Channel.CLI, Channel.SYSTEM})
+    _WELCOME_EXCLUDED = frozenset({Channel.WEBSOCKET, Channel.CLI, Channel.SYSTEM, Channel.DISCORD})
 
     async def _process_message_inner(self, message: InboundMessage, session_key: str) -> None:
         """Inner message processing (called under concurrency guards)."""
