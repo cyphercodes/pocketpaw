@@ -340,18 +340,25 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, description="OpenAI API key")
     openai_model: str = Field(default="gpt-5.2", description="OpenAI model to use")
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
+    claude_code_oauth_token: str | None = Field(
+        default=None,
+        description=(
+            "Claude Code OAuth token JSON (from `claude setup-token`). "
+            "Allows Docker/headless use of Max/Pro subscription without an API key."
+        ),
+    )
     anthropic_model: str = Field(default="claude-sonnet-4-6", description="Anthropic model to use")
 
     # Memory Backend
     memory_backend: str = Field(
         default="file",
-        description=("Memory backend: 'file' (simple markdown), "
-        "'mem0' (semantic with LLM), 'vector' (ChromaDB)"
+        description=(
+            "Memory backend: 'file' (simple markdown), "
+            "'mem0' (semantic with LLM), 'vector' (ChromaDB)"
         ),
     )
     vectordb_path: str = Field(
-        default="~/.pocketpaw/chroma_db",
-        description="Storage path for the vector database"
+        default="~/.pocketpaw/chroma_db", description="Storage path for the vector database"
     )
     memory_use_inference: bool = Field(
         default=True, description="Use LLM to extract facts from memories (only for mem0 backend)"
@@ -430,6 +437,14 @@ class Settings(BaseSettings):
     discord_conversation_channel_ids: list[int] = Field(
         default_factory=list,
         description="Discord channels where the bot participates in group conversation",
+    )
+    discord_conversation_all_channels: bool = Field(
+        default=False,
+        description="Enable conversation mode in all server channels (overrides channel list)",
+    )
+    discord_conversation_exclude_channel_ids: list[int] = Field(
+        default_factory=list,
+        description="Channel IDs excluded from conversation mode (e.g. announcements)",
     )
     discord_bot_name: str = Field(
         default="Paw", description="Display name used by the bot in conversation"
