@@ -79,7 +79,7 @@ class ClaudeSDKBackend:
                 "WebFetch",
             ],
             tool_policy_map=ClaudeSDKBackend._TOOL_POLICY_MAP,
-            required_keys=[],  # temporarily bypassed
+            required_keys=["anthropic_api_key"],
             supported_providers=[
                 "anthropic",
                 "ollama",
