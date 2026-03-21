@@ -1772,6 +1772,14 @@ def run_dashboard(
             port = settings.web_port
         first_run = False
 
+        settings_check = Settings.load()
+        if settings_check.frontend == "alpine":
+            logger.warning(
+                "Alpine.js dashboard is deprecated and will be removed in a future release. "
+                "Run scripts/build-frontend.sh and set POCKETPAW_FRONTEND=svelte to use the "
+                "new SvelteKit dashboard."
+            )
+
         print("\n" + "=" * 50)
         print("🐾 POCKETPAW WEB DASHBOARD")
         print("=" * 50)

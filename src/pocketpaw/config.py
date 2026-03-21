@@ -748,11 +748,11 @@ class Settings(BaseSettings):
     web_host: str = Field(default="127.0.0.1", description="Web server host")
     web_port: int = Field(default=8888, description="Web server port")
     frontend: Literal["svelte", "alpine"] = Field(
-        default="alpine",
+        default="svelte",
         description=(
-            "Frontend to serve: 'svelte' (SvelteKit, requires running scripts/build-frontend.sh) "
-            "or 'alpine' (legacy Alpine.js dashboard). "
-            "Set via POCKETPAW_FRONTEND=svelte environment variable."
+            "Frontend to serve: 'svelte' (SvelteKit, default) "
+            "or 'alpine' (legacy Alpine.js dashboard, deprecated). "
+            "Set POCKETPAW_FRONTEND=alpine to use legacy dashboard."
         ),
     )
 
