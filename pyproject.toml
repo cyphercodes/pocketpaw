@@ -106,7 +106,7 @@ soul = [
 
 # --- Channel extras ---
 discord = [
-    "discord-cli-agent>=0.6.0",
+    "discord-cli-agent>=0.7.0",
 ]
 slack = [
     "slack-bolt>=1.20.0",
@@ -160,7 +160,7 @@ channels = [
     # telegram
     "python-telegram-bot>=21.0",
     # discord
-    "discord-cli-agent>=0.6.0",
+    "discord-cli-agent>=0.7.0",
     # slack
     "slack-bolt>=1.20.0",
 ]
@@ -168,7 +168,7 @@ all-channels = [
     # telegram
     "python-telegram-bot>=21.0",
     # discord
-    "discord-cli-agent>=0.6.0",
+    "discord-cli-agent>=0.7.0",
     # slack
     "slack-bolt>=1.20.0",
     # whatsapp-personal
@@ -220,7 +220,7 @@ all = [
     "pyautogui>=0.9.54",
     # channels
     "python-telegram-bot>=21.0",
-    "discord-cli-agent>=0.6.0",
+    "discord-cli-agent>=0.7.0",
     "slack-bolt>=1.20.0",
     "neonize>=0.3.14",
     "matrix-nio>=0.24.0",
@@ -252,7 +252,7 @@ dev = [
     "psutil>=5.9.0",
     "pyautogui>=0.9.54",
     "python-telegram-bot>=21.0",
-    "discord-cli-agent>=0.6.0",
+    "discord-cli-agent>=0.7.0",
     "slack-bolt>=1.20.0",
     "neonize>=0.3.14",
     "matrix-nio>=0.24.0",
@@ -316,7 +316,7 @@ dev = [
     "psutil>=5.9.0",
     "pyautogui>=0.9.54",
     "python-telegram-bot>=21.0",
-    "discord-cli-agent>=0.6.4",
+    "discord-cli-agent>=0.7.0",
     "slack-bolt>=1.20.0",
     "neonize>=0.3.14",
     "matrix-nio>=0.24.0",
