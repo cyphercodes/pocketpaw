@@ -30,15 +30,24 @@
     root.style.setProperty("--glass-reflex-light", "1");
     root.style.setProperty("--saturation", "150%");
 
-    // Load saved glass opacity
+    // Load saved glass settings
     let savedGlass = 38;
+    let glassOn = true;
     try {
       const g = localStorage.getItem("paw-os-glass-opacity");
       if (g) savedGlass = parseInt(g, 10);
+      const e = localStorage.getItem("paw-os-glass-enabled");
+      if (e !== null) glassOn = e !== "false";
     } catch {}
     const glassStyle = document.createElement("style");
     glassStyle.id = "glass-opacity-style";
-    glassStyle.textContent = `.liquid-glass { background-color: color-mix(in srgb, var(--c-glass) ${savedGlass}%, transparent) !important; }`;
+    if (glassOn) {
+      document.body.classList.remove("glass-off");
+      glassStyle.textContent = `.liquid-glass { background-color: color-mix(in srgb, var(--c-glass) ${savedGlass}%, transparent) !important; backdrop-filter: blur(8px) saturate(var(--saturation)) url(#switcher) !important; }`;
+    } else {
+      document.body.classList.add("glass-off");
+      glassStyle.textContent = `.glass-off .liquid-glass { background-color: #262621 !important; backdrop-filter: none !important; border-color: rgba(255,255,255,0.10) !important; }`;
+    }
     document.head.appendChild(glassStyle);
 
     document.body.style.overflow = "hidden";
