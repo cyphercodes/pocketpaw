@@ -557,8 +557,7 @@ class FileMemoryStore:
             """
         )
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memory_vectors_user_scope "
-            "ON memory_vectors(user_scope)"
+            "CREATE INDEX IF NOT EXISTS idx_memory_vectors_user_scope ON memory_vectors(user_scope)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_memory_vectors_type ON memory_vectors(memory_type)"

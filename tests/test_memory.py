@@ -258,9 +258,17 @@ class TestGraphExtraction:
         """Test that blacklisted generic words are rejected as entities."""
         # These should be filtered out
         blacklisted = [
-            "something", "anything", "question", "thing",
-            "it", "this", "that", "they",
-            "meeting", "call", "plan",
+            "something",
+            "anything",
+            "question",
+            "thing",
+            "it",
+            "this",
+            "that",
+            "they",
+            "meeting",
+            "call",
+            "plan",
         ]
         for word in blacklisted:
             assert not vector_memory_store._is_valid_entity_candidate(word)
@@ -293,7 +301,9 @@ class TestGraphExtraction:
             "Project", "uses", "Project"
         )
         assert not vector_memory_store._is_valid_relationship_candidate(
-            "OpenAI", "uses", "openai"  # Case insensitive
+            "OpenAI",
+            "uses",
+            "openai",  # Case insensitive
         )
 
     def test_valid_relationship_candidates(self, vector_memory_store):
@@ -301,9 +311,7 @@ class TestGraphExtraction:
         assert vector_memory_store._is_valid_relationship_candidate(
             "Project Phoenix", "uses", "PostgreSQL"
         )
-        assert vector_memory_store._is_valid_relationship_candidate(
-            "MyApp", "depends_on", "Redis"
-        )
+        assert vector_memory_store._is_valid_relationship_candidate("MyApp", "depends_on", "Redis")
 
     def test_extract_graph_signals_tech_terms(self, vector_memory_store):
         """Test extraction of technology terms."""
