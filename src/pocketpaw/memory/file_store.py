@@ -147,29 +147,11 @@ _STOP_WORDS = frozenset(
     }
 )
 
-# =============================================================================
-# Knowledge Graph Extraction
-# =============================================================================
-# NOTE: Regex-based entity extraction is intentionally conservative.
-#
-# The current implementation uses a hybrid approach:
-# 1. Conservative regex patterns that require specific structural cues
-# 2. Heuristic filtering to remove obvious false positives
-# 3. (Future) LLM validation layer for high-confidence relationships
-#
-# The "has" pattern was removed because it produces massive false positives
-# from natural language (e.g., "The user has a question" -> user-has-question).
-# Only patterns with clear semantic boundaries are enabled.
-#
-# TODO: Implement LLM-based validation pipeline for extracted candidates:
-#   - Send candidate triples (entity, relation, entity) to LLM
-#   - Validate: Is this a meaningful, stable relationship?
-#   - Normalize: Map messy language to controlled schema
-#   - Canonicalize: "OpenAI", "Open AI", "openai" -> OpenAI
-#   - Confidence threshold: Only store edges above 0.75 confidence
-#
-# See: https://github.com/pocketpaw/pocketpaw/issues/XXX
-# =============================================================================
+# Knowledge graph extraction is regex + heuristics only (no LLM dependency here).
+# Pipeline:
+# 1) extract candidate entities/relations via conservative patterns
+# 2) canonicalize entity names and normalize relation types
+# 3) compute confidence and keep only edges above threshold
 
 # Technology terms for entity extraction (lowercase for matching)
 _GRAPH_TECH_TERMS = frozenset(
@@ -299,6 +281,65 @@ _GRAPH_ENTITY_BLACKLIST = frozenset(
 
 # Maximum word count for extracted entities (longer = likely sentence fragment)
 _GRAPH_MAX_ENTITY_WORDS = 6
+_GRAPH_RELATION_CONFIDENCE_THRESHOLD = 0.75
+
+# Controlled relation schema for graph edges.
+_GRAPH_RELATION_SCHEMA = frozenset(
+    {
+        "uses",
+        "depends_on",
+        "built_on",
+        "is_a",
+        "part_of",
+        "implements",
+        "extends",
+        "calls",
+    }
+)
+
+_RELATION_NORMALIZATION_MAP = {
+    "depends": "depends_on",
+    "depends_on": "depends_on",
+    "built on": "built_on",
+    "built_on": "built_on",
+    "kind_of": "is_a",
+    "type_of": "is_a",
+    "is_a": "is_a",
+    "part_of": "part_of",
+    "implements": "implements",
+    "inherits_from": "extends",
+    "extends": "extends",
+    "invokes": "calls",
+    "calls": "calls",
+    "uses": "uses",
+}
+
+_TECH_CANONICAL_NAMES = {
+    "python": "Python",
+    "java": "Java",
+    "javascript": "JavaScript",
+    "typescript": "TypeScript",
+    "react": "React",
+    "node": "Node",
+    "fastapi": "FastAPI",
+    "flask": "Flask",
+    "django": "Django",
+    "postgres": "Postgres",
+    "postgresql": "PostgreSQL",
+    "mysql": "MySQL",
+    "sqlite": "SQLite",
+    "redis": "Redis",
+    "mongodb": "MongoDB",
+    "docker": "Docker",
+    "kubernetes": "Kubernetes",
+    "ollama": "Ollama",
+    "anthropic": "Anthropic",
+    "openai": "OpenAI",
+    "qdrant": "Qdrant",
+    "chromadb": "ChromaDB",
+    "mem0": "Mem0",
+    "pocketpaw": "PocketPaw",
+}
 
 # Conservative regex patterns for relationship extraction.
 # These require specific structural cues to reduce false positives.
@@ -685,6 +726,68 @@ class FileMemoryStore:
 
         return True
 
+    @staticmethod
+    def _canonicalize_entity_name(name: str) -> str:
+        """Canonicalize an entity name for cleaner graph nodes."""
+        compact = re.sub(r"\s+", " ", name).strip(" \t\n.,;:()[]{}\"'")
+        if not compact:
+            return ""
+
+        lowered = compact.lower()
+        if lowered.startswith("the "):
+            compact = compact[4:].strip()
+            lowered = compact.lower()
+        elif lowered.startswith("a "):
+            compact = compact[2:].strip()
+            lowered = compact.lower()
+        elif lowered.startswith("an "):
+            compact = compact[3:].strip()
+            lowered = compact.lower()
+
+        if lowered in _TECH_CANONICAL_NAMES:
+            return _TECH_CANONICAL_NAMES[lowered]
+
+        return compact
+
+    @staticmethod
+    def _normalize_relation_type(relation: str) -> str:
+        """Map a raw/extracted relation into the controlled relation schema."""
+        normalized = relation.strip().lower().replace(" ", "_")
+        normalized = _RELATION_NORMALIZATION_MAP.get(normalized, normalized)
+        return normalized if normalized in _GRAPH_RELATION_SCHEMA else ""
+
+    @staticmethod
+    def _score_relationship_candidate(src: str, rel_type: str, tgt: str) -> float:
+        """Score confidence for a relationship candidate in range [0.0, 1.0]."""
+        relation_weight = {
+            "depends_on": 0.90,
+            "built_on": 0.88,
+            "implements": 0.88,
+            "extends": 0.87,
+            "part_of": 0.86,
+            "calls": 0.85,
+            "uses": 0.82,
+            "is_a": 0.80,
+        }
+
+        score = relation_weight.get(rel_type, 0.70)
+
+        src_lower = src.lower()
+        tgt_lower = tgt.lower()
+        if src_lower in _GRAPH_TECH_TERMS:
+            score += 0.08
+        if tgt_lower in _GRAPH_TECH_TERMS:
+            score += 0.08
+
+        src_title = any(ch.isupper() for ch in src)
+        tgt_title = any(ch.isupper() for ch in tgt)
+        if src_title:
+            score += 0.03
+        if tgt_title:
+            score += 0.03
+
+        return max(0.0, min(1.0, score))
+
     def _extract_graph_signals(self, content: str) -> tuple[list[str], list[tuple[str, str, str]]]:
         """Extract entities + simple relationships from conversational text.
 
@@ -698,10 +801,8 @@ class FileMemoryStore:
         false-positive rate (e.g., "The user has a question" -> user-has-question).
         Only patterns with clear semantic boundaries are used.
 
-        TODO: Add LLM validation layer for candidate triples:
-        - Validate semantic meaningfulness
-        - Normalize entity names (canonicalization)
-        - Confidence scoring before storage
+        Relationship edges are normalized to a controlled schema and gated by
+        confidence threshold before they are persisted.
         """
         entities: set[str] = set()
         relationships: list[tuple[str, str, str]] = []
@@ -709,7 +810,7 @@ class FileMemoryStore:
         # Technology entities (lowercase terms) - high precision
         for token in _tokenize(content):
             if token in _GRAPH_TECH_TERMS:
-                entities.add(token)
+                entities.add(self._canonicalize_entity_name(token))
 
         # Title-case entities (e.g., Project Phoenix) - moderate precision
         # Require at least one capital letter to avoid matching common words
@@ -719,7 +820,9 @@ class FileMemoryStore:
         ):
             name = match.group(0).strip()
             if len(name) >= 3 and self._is_valid_entity_candidate(name):
-                entities.add(name)
+                canonical_name = self._canonicalize_entity_name(name)
+                if canonical_name:
+                    entities.add(canonical_name)
 
         # Explicit relationships from conservative patterns
         for pattern, rel_type in _RELATION_PATTERNS:
@@ -729,13 +832,23 @@ class FileMemoryStore:
                 if not src or not tgt:
                     continue
 
+                src = self._canonicalize_entity_name(src)
+                tgt = self._canonicalize_entity_name(tgt)
+                normalized_rel = self._normalize_relation_type(rel_type)
+                if not src or not tgt or not normalized_rel:
+                    continue
+
                 # Apply heuristic filtering
-                if not self._is_valid_relationship_candidate(src, rel_type, tgt):
+                if not self._is_valid_relationship_candidate(src, normalized_rel, tgt):
+                    continue
+
+                confidence = self._score_relationship_candidate(src, normalized_rel, tgt)
+                if confidence < _GRAPH_RELATION_CONFIDENCE_THRESHOLD:
                     continue
 
                 entities.add(src)
                 entities.add(tgt)
-                relationships.append((src, rel_type, tgt))
+                relationships.append((src, normalized_rel, tgt))
 
         # REMOVED: Weak fallback that connects arbitrary entities.
         # This produced too many false-positive "related_to" edges.

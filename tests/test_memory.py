@@ -318,9 +318,9 @@ class TestGraphExtraction:
         content = "The project uses Python and PostgreSQL for the backend"
         entities, relationships = vector_memory_store._extract_graph_signals(content)
 
-        # Should extract tech terms
-        assert "python" in entities
-        assert "postgresql" in entities
+        # Should extract canonical tech names
+        assert "Python" in entities
+        assert "PostgreSQL" in entities
 
     def test_extract_graph_signals_title_case(self, vector_memory_store):
         """Test extraction of title-case entities."""
@@ -351,6 +351,48 @@ class TestGraphExtraction:
             src == "MyService" and rel == "depends_on" and tgt == "Redis for caching"
             for src, rel, tgt in relationships
         )
+
+    def test_entity_canonicalization(self, vector_memory_store):
+        """Canonicalization strips determiners and normalizes known tech names."""
+        assert vector_memory_store._canonicalize_entity_name("the openai") == "OpenAI"
+        assert vector_memory_store._canonicalize_entity_name("an postgresql") == "PostgreSQL"
+        assert (
+            vector_memory_store._canonicalize_entity_name("  Project   Phoenix  ")
+            == "Project Phoenix"
+        )
+
+    def test_relation_normalization_schema(self, vector_memory_store):
+        """Relation normalization maps aliases into controlled schema."""
+        assert vector_memory_store._normalize_relation_type("depends on") == "depends_on"
+        assert vector_memory_store._normalize_relation_type("invokes") == "calls"
+        assert vector_memory_store._normalize_relation_type("inherits_from") == "extends"
+        assert vector_memory_store._normalize_relation_type("unknown_rel") == ""
+
+    def test_confidence_threshold_blocks_low_confidence_edges(
+        self,
+        vector_memory_store,
+        monkeypatch,
+    ):
+        """Low-confidence relationship candidates are dropped."""
+
+        monkeypatch.setattr(
+            FileMemoryStore,
+            "_score_relationship_candidate",
+            staticmethod(lambda src, rel, tgt: 0.50),
+        )
+
+        content = "Project Phoenix uses PostgreSQL for data storage"
+        entities, relationships = vector_memory_store._extract_graph_signals(content)
+
+        assert "Project Phoenix" in entities
+        assert "PostgreSQL" in entities
+        assert relationships == []
+
+    def test_stores_only_high_confidence_edges(self, vector_memory_store):
+        """Only confidence-qualified edges are emitted from extraction."""
+        content = "Project Alpha is built on FastAPI"
+        entities, relationships = vector_memory_store._extract_graph_signals(content)
+        assert any(rel == "built_on" for _, rel, _ in relationships)
 
     def test_extract_graph_signals_built_on_pattern(self, vector_memory_store):
         """Test 'built_on' relationship pattern extraction."""
@@ -388,7 +430,7 @@ class TestGraphExtraction:
         entities, relationships = vector_memory_store._extract_graph_signals(content)
 
         assert any(
-            src == "MyClient" and rel == "implements" and tgt == "the API interface"
+            src == "MyClient" and rel == "implements" and tgt == "API interface"
             for src, rel, tgt in relationships
         )
 
@@ -418,7 +460,7 @@ class TestGraphExtraction:
         entities, relationships = vector_memory_store._extract_graph_signals(content)
 
         assert any(
-            src == "Frontend" and rel == "calls" and tgt == "the Backend API"
+            src == "Frontend" and rel == "calls" and tgt == "Backend API"
             for src, rel, tgt in relationships
         )
 
@@ -428,7 +470,7 @@ class TestGraphExtraction:
         entities, relationships = vector_memory_store._extract_graph_signals(content)
 
         assert any(
-            src == "Frontend" and rel == "calls" and tgt == "the Backend API"
+            src == "Frontend" and rel == "calls" and tgt == "Backend API"
             for src, rel, tgt in relationships
         )
 
