@@ -907,6 +907,11 @@ class TestFileGraphAndManagement:
 class TestGraphSVGHtmlEscaping:
     """HTML escaping in get_graph_svg to prevent malformed SVG."""
 
+    @staticmethod
+    def _skip_if_graph_unavailable(svg: str) -> None:
+        if "Graph visualization unavailable" in svg:
+            pytest.skip("graph extras unavailable; SVG renderer fallback active")
+
     async def test_direct_entity_escaping_greater_than(self, tmp_path):
         """Test HTML escaping by directly inserting entities with >."""
         store = FileMemoryStore(
@@ -935,6 +940,7 @@ class TestGraphSVGHtmlEscaping:
             conn.commit()
 
         svg = await store.get_graph_svg(user_id="default")
+        self._skip_if_graph_unavailable(svg)
         assert "&gt;" in svg
         assert "<svg" in svg
         assert "</svg>" in svg
@@ -967,6 +973,7 @@ class TestGraphSVGHtmlEscaping:
             conn.commit()
 
         svg = await store.get_graph_svg(user_id="default")
+        self._skip_if_graph_unavailable(svg)
         assert "&amp;" in svg
         assert "<svg" in svg
         assert "</svg>" in svg
@@ -1007,6 +1014,7 @@ class TestGraphSVGHtmlEscaping:
             conn.commit()
 
         svg = await store.get_graph_svg(user_id="default")
+        self._skip_if_graph_unavailable(svg)
         # Verify SVG is well-formed and contains the entities
         assert "<svg" in svg
         assert "</svg>" in svg
@@ -1030,6 +1038,7 @@ class TestGraphSVGHtmlEscaping:
         )
 
         svg = await store.get_graph_svg(user_id="default")
+        self._skip_if_graph_unavailable(svg)
         # Should have normal SVG structure
         assert "<svg" in svg
         assert "</svg>" in svg
@@ -1066,6 +1075,7 @@ class TestGraphSVGHtmlEscaping:
             conn.commit()
 
         svg = await store.get_graph_svg(user_id="default")
+        self._skip_if_graph_unavailable(svg)
         # SVG should still be well-formed (properly closed tags)
         assert svg.count("<svg") == 1
         assert svg.count("</svg>") == 1
