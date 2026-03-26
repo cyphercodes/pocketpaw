@@ -1,6 +1,6 @@
 <!-- PocketsPanel.svelte — Pockets workspace browser + detail view for the Agent OS.
-     Updated: 2026-03-23 — Added NexWrk hospitality demo pockets (NexWrk HQ + NexWrk Events).
-     Hospitality category, contextual AI responses, NexWrk-specific sidebar suggestions.
+     Updated: 2026-03-25 — Multi-soul team UI: team strip below toolbar, soul-attributed
+     AI messages, widget soul badges. NexWrk pockets get a virtual C-suite team (CFO, CMO, COO, CISO).
 -->
 <script lang="ts">
   import { onMount, tick } from "svelte";
@@ -41,10 +41,72 @@
   import GripVertical from "@lucide/svelte/icons/grip-vertical";
   import Building2 from "@lucide/svelte/icons/building-2";
   import UtensilsCrossed from "@lucide/svelte/icons/utensils-crossed";
+  import Monitor from "@lucide/svelte/icons/monitor";
   import type { Component } from "svelte";
+  import TerminalPocket from "./TerminalPocket.svelte";
+
+  // --- Team Soul system ---
+  type TeamSoul = {
+    id: string;
+    name: string;
+    role: string;
+    initials: string;
+    color: string;
+    status: "active" | "idle" | "thinking";
+    focus: string;
+  };
+
+  const TEAM_SOULS: Record<string, TeamSoul[]> = {
+    "NexWrk HQ": [
+      { id: "cfo", name: "Finance", role: "CFO", initials: "CF", color: "#30D158", status: "active", focus: "Cash flow & revenue" },
+      { id: "cmo", name: "Marketing", role: "CMO", initials: "CM", color: "#0A84FF", status: "active", focus: "Brand & campaigns" },
+      { id: "coo", name: "Operations", role: "COO", initials: "CO", color: "#FF9F0A", status: "idle", focus: "Venue & staff" },
+      { id: "ciso", name: "Security", role: "CISO", initials: "CS", color: "#FF453A", status: "idle", focus: "Compliance & risk" },
+    ],
+    "NexWrk Events": [
+      { id: "coo", name: "Operations", role: "COO", initials: "CO", color: "#FF9F0A", status: "active", focus: "Event production" },
+      { id: "cfo", name: "Finance", role: "CFO", initials: "CF", color: "#30D158", status: "active", focus: "Event revenue" },
+      { id: "cmo", name: "Marketing", role: "CMO", initials: "CM", color: "#0A84FF", status: "idle", focus: "Event promotion" },
+    ],
+  };
+
+  // Map widget names to the soul that "owns" them
+  const WIDGET_SOUL_MAP: Record<string, string> = {
+    "NexWrk Revenue": "cfo", "F&B Breakdown": "cfo", "Sponsor Pipeline": "cfo",
+    "Event Pipeline": "coo", "Venue Bookings": "coo", "Event Staff": "coo",
+    "Upcoming Events": "coo", "Event Checklist": "coo", "Venue Capacity": "coo",
+    "Occupancy Rate": "coo", "Member Pipeline": "cmo", "Event Reviews": "cmo",
+    "Guest RSVP": "cmo",
+  };
+
+  function getTeamForPocket(pocketName: string): TeamSoul[] {
+    return TEAM_SOULS[pocketName] || [];
+  }
+
+  function getSoulForWidget(widgetName: string, pocketName: string): TeamSoul | null {
+    const soulId = WIDGET_SOUL_MAP[widgetName];
+    if (!soulId) return null;
+    const team = getTeamForPocket(pocketName);
+    return team.find(s => s.id === soulId) || null;
+  }
+
+  // Track which soul is "responding" in chat
+  let respondingSoul = $state<TeamSoul | null>(null);
+
+  // Chat mode: "team" (all souls), or a specific soul id for 1:1
+  let chatTarget = $state<"team" | string>("team");
+  let hoveredSoul = $state<TeamSoul | null>(null);
+
+  // Soul stats data (mock)
+  const SOUL_STATS: Record<string, { mood: string; energy: number; memories: number; lastAction: string }> = {
+    cfo: { mood: "Focused", energy: 87, memories: 142, lastAction: "Flagged cash flow dip for next week" },
+    cmo: { mood: "Curious", energy: 72, memories: 98, lastAction: "Analyzed guest review sentiment" },
+    coo: { mood: "Active", energy: 91, memories: 167, lastAction: "Updated Saturday staff schedule" },
+    ciso: { mood: "Vigilant", energy: 65, memories: 54, lastAction: "Ran compliance check on payment data" },
+  };
 
   // --- AI chat state ---
-  type AiMessage = { id: string; role: "user" | "agent"; text: string };
+  type AiMessage = { id: string; role: "user" | "agent"; text: string; soul?: TeamSoul };
   let aiMessages = $state<AiMessage[]>([]);
   let aiInput = $state("");
   let aiTyping = $state(false);
@@ -90,14 +152,26 @@
     aiTyping = true;
     await scrollAiChat();
     await new Promise((r) => setTimeout(r, 800 + Math.random() * 800));
-    const responses = selectedPocket?.name.includes("NexWrk")
+    const isNexWrk = selectedPocket?.name.includes("NexWrk");
+    const responses = isNexWrk
       ? AI_RESPONSES_NEXWRK
       : selectedPocket
         ? AI_RESPONSES_DETAIL
         : AI_RESPONSES_GRID;
+    // Pick the responding soul based on chat target
+    const team = selectedPocket ? getTeamForPocket(selectedPocket.name) : [];
+    if (isNexWrk && chatTarget !== "team") {
+      respondingSoul = team.find(s => s.id === chatTarget) || null;
+    } else {
+      const activeSouls = team.filter(s => s.status === "active");
+      respondingSoul = isNexWrk && activeSouls.length > 0
+        ? activeSouls[Math.floor(Math.random() * activeSouls.length)]
+        : null;
+    }
     aiMessages = [...aiMessages, {
       id: `a${Date.now()}`, role: "agent",
       text: responses[Math.floor(Math.random() * responses.length)],
+      soul: respondingSoul || undefined,
     }];
     aiTyping = false;
     await scrollAiChat();
@@ -154,14 +228,21 @@
 
   // --- Pockets data ---
   type Widget = { id: string; name: string; icon: Component; color: string; span: string };
+  type Collaborator = { initials: string; color: string; name: string };
   type Pocket = {
     id: string; name: string; description: string; type: string;
     icon: Component; color: string; widgets: Widget[];
     lastActive: string; active?: boolean;
+    collaborators?: Collaborator[];
   };
 
+  const COLLAB_PRAKASH: Collaborator = { initials: "PG", color: "#0A84FF", name: "Prakash" };
+  const COLLAB_ROBERT: Collaborator = { initials: "RK", color: "#FF6B35", name: "Robert" };
+  const COLLAB_ROHIT: Collaborator = { initials: "RS", color: "#30D158", name: "Rohit" };
+  const COLLAB_DIANA: Collaborator = { initials: "DR", color: "#E040FB", name: "Diana" };
+
   const MOCK_POCKETS: Pocket[] = [
-    { id: "p1", name: "Mission Control", description: "Agent crew status, tasks, costs, and activity feed", type: "mission", icon: Target, color: "#0A84FF", lastActive: "Just now", active: true, widgets: [
+    { id: "p1", name: "Mission Control", description: "Agent crew status, tasks, costs, and activity feed", type: "mission", icon: Target, color: "#0A84FF", lastActive: "Just now", active: true, collaborators: [COLLAB_PRAKASH, COLLAB_ROHIT], widgets: [
       { id: "w1", name: "Agent Crew", icon: Users, color: "#30D158", span: "col-span-1" },
       { id: "w2", name: "Active Tasks", icon: ListTodo, color: "#FF9F0A", span: "col-span-1" },
       { id: "w3", name: "Activity Feed", icon: Activity, color: "#5E5CE6", span: "col-span-1" },
@@ -210,7 +291,7 @@
       { id: "w32", name: "Team Capacity", icon: BarChart3, color: "#30D158", span: "col-span-1" },
     ]},
     // --- Realistic business pockets ---
-    { id: "p9", name: "Brew & Co. HQ", description: "Full business dashboard — revenue, orders, inventory, staff, reviews", type: "business", icon: Store, color: "#C4813D", lastActive: "Just now", active: true, widgets: [
+    { id: "p9", name: "Brew & Co. HQ", description: "Full business dashboard — revenue, orders, inventory, staff, reviews", type: "business", icon: Store, color: "#C4813D", lastActive: "Just now", active: true, collaborators: [COLLAB_PRAKASH], widgets: [
       { id: "w40", name: "Revenue Today", icon: DollarSign, color: "#30D158", span: "col-span-1" },
       { id: "w41", name: "Live Orders", icon: ShoppingCart, color: "#0A84FF", span: "col-span-2" },
       { id: "w42", name: "Weekly Sales", icon: TrendingUp, color: "#C4813D", span: "col-span-2" },
@@ -238,7 +319,7 @@
       { id: "w65", name: "Tax Deadlines", icon: CalendarDays, color: "#FF9F0A", span: "col-span-1" },
     ]},
     // --- NexWrk Hospitality ---
-    { id: "p12", name: "NexWrk HQ", description: "Venue operations — events, bookings, F&B, occupancy, and member pipeline", type: "hospitality", icon: Building2, color: "#FF6B35", lastActive: "Just now", active: true, widgets: [
+    { id: "p12", name: "NexWrk HQ", description: "Venue operations — events, bookings, F&B, occupancy, and member pipeline", type: "hospitality", icon: Building2, color: "#FF6B35", lastActive: "Just now", active: true, collaborators: [COLLAB_PRAKASH, COLLAB_ROBERT, COLLAB_DIANA], widgets: [
       { id: "w70", name: "NexWrk Revenue", icon: DollarSign, color: "#30D158", span: "col-span-1" },
       { id: "w71", name: "Event Pipeline", icon: CalendarDays, color: "#FF6B35", span: "col-span-2" },
       { id: "w72", name: "Venue Bookings", icon: LayoutGrid, color: "#0A84FF", span: "col-span-2" },
@@ -248,13 +329,15 @@
       { id: "w76", name: "Event Reviews", icon: Star, color: "#FEBC2E", span: "col-span-1" },
       { id: "w77", name: "Event Staff", icon: CalendarDays, color: "#64D2FF", span: "col-span-1" },
     ]},
-    { id: "p13", name: "NexWrk Events", description: "Upcoming events — production status, guest count, revenue, and vendor checklist", type: "hospitality", icon: Sparkles, color: "#E040FB", lastActive: "1 hour ago", widgets: [
+    { id: "p13", name: "NexWrk Events", description: "Upcoming events — production status, guest count, revenue, and vendor checklist", type: "hospitality", icon: Sparkles, color: "#E040FB", lastActive: "1 hour ago", collaborators: [COLLAB_PRAKASH, COLLAB_ROBERT], widgets: [
       { id: "w80", name: "Upcoming Events", icon: CalendarDays, color: "#E040FB", span: "col-span-2" },
       { id: "w81", name: "Guest RSVP", icon: Users, color: "#0A84FF", span: "col-span-1" },
       { id: "w82", name: "Sponsor Pipeline", icon: DollarSign, color: "#30D158", span: "col-span-1" },
       { id: "w83", name: "Event Checklist", icon: ListTodo, color: "#FF9F0A", span: "col-span-2" },
       { id: "w84", name: "Venue Capacity", icon: BarChart3, color: "#FF6B35", span: "col-span-2" },
     ]},
+    // --- Terminal / Bloomberg-style pocket ---
+    { id: "p14", name: "NexWrk Terminal", description: "Bloomberg-style analytics — revenue trends, occupancy heatmap, member growth, F&B breakdown", type: "hospitality", icon: Monitor, color: "#64D2FF", lastActive: "Just now", active: true, collaborators: [COLLAB_PRAKASH, COLLAB_ROBERT], widgets: [] },
   ];
 
   // --- Widget display data (same system as DesktopWidgets) ---
@@ -728,7 +811,18 @@
               </div>
               <div class="pocket-footer">
                 <span class="pocket-widgets"><Puzzle size={11} strokeWidth={1.8} /> {pocket.widgets.length} widgets</span>
-                <span class="pocket-time"><Clock size={11} strokeWidth={1.8} /> {pocket.lastActive}</span>
+                {#if pocket.collaborators && pocket.collaborators.length > 0}
+                  <div class="pocket-collabs">
+                    {#each pocket.collaborators.slice(0, 3) as collab, i}
+                      <div class="pocket-collab" style="background:{collab.color}; z-index:{3-i}" title={collab.name}>{collab.initials}</div>
+                    {/each}
+                    {#if pocket.collaborators.length > 3}
+                      <div class="pocket-collab pocket-collab-more" style="z-index:0">+{pocket.collaborators.length - 3}</div>
+                    {/if}
+                  </div>
+                {:else}
+                  <span class="pocket-time"><Clock size={11} strokeWidth={1.8} /> {pocket.lastActive}</span>
+                {/if}
               </div>
             </button>
           {/each}
@@ -746,7 +840,8 @@
       {@const PocketIcon = selectedPocket.icon}
       <main class="detail-view">
         {#if !selectedWidget}
-          <!-- Pocket toolbar -->
+          <!-- Pocket toolbar with integrated team -->
+          {@const team = getTeamForPocket(selectedPocket.name)}
           <header class="detail-toolbar">
             <button class="detail-back" onclick={closePocket}><ArrowLeft size={16} strokeWidth={2} /></button>
             <div class="detail-title-group">
@@ -756,21 +851,100 @@
               <h2 class="detail-title">{selectedPocket.name}</h2>
               {#if selectedPocket.active}<span class="detail-live">Live</span>{/if}
             </div>
+
+            <!-- Team avatars inline in toolbar -->
+            {#if team.length > 0}
+              <div class="toolbar-team">
+                {#each team as soul}
+                  <div
+                    class="toolbar-soul"
+                    onmouseenter={() => { hoveredSoul = soul; }}
+                    onmouseleave={() => { hoveredSoul = null; }}
+                    onclick={() => { chatTarget = chatTarget === soul.id ? "team" : soul.id; }}
+                  >
+                    <div
+                      class={chatTarget === soul.id ? "toolbar-avatar toolbar-avatar-selected" : "toolbar-avatar"}
+                      style="background:{soul.color}; opacity:{soul.status === 'idle' ? 0.40 : 1}"
+                    >
+                      {soul.initials}
+                    </div>
+                    {#if soul.status === "active"}
+                      <span class="toolbar-soul-dot" style="background:{soul.color}"></span>
+                    {/if}
+
+                    <!-- Hover popover -->
+                    {#if hoveredSoul?.id === soul.id}
+                      {@const stats = SOUL_STATS[soul.id]}
+                      <div class="soul-popover">
+                        <div class="soul-pop-header">
+                          <div class="soul-pop-avatar" style="background:{soul.color}">{soul.initials}</div>
+                          <div class="soul-pop-info">
+                            <span class="soul-pop-name">{soul.role} — {soul.name}</span>
+                            <span class="soul-pop-focus">{soul.focus}</span>
+                          </div>
+                        </div>
+                        {#if stats}
+                          <div class="soul-pop-stats">
+                            <div class="soul-pop-stat">
+                              <span class="soul-pop-stat-label">Mood</span>
+                              <span class="soul-pop-stat-value">{stats.mood}</span>
+                            </div>
+                            <div class="soul-pop-stat">
+                              <span class="soul-pop-stat-label">Energy</span>
+                              <div class="soul-pop-bar">
+                                <div class="soul-pop-bar-fill" style="width:{stats.energy}%;background:{soul.color}"></div>
+                              </div>
+                              <span class="soul-pop-stat-value">{stats.energy}%</span>
+                            </div>
+                            <div class="soul-pop-stat">
+                              <span class="soul-pop-stat-label">Memories</span>
+                              <span class="soul-pop-stat-value">{stats.memories}</span>
+                            </div>
+                          </div>
+                          <div class="soul-pop-action">
+                            <span class="soul-pop-action-label">Last action</span>
+                            <span class="soul-pop-action-text">{stats.lastAction}</span>
+                          </div>
+                        {/if}
+                        <div class="soul-pop-footer">
+                          {#if chatTarget === soul.id}
+                            <span class="soul-pop-chat-active" style="color:{soul.color}">Chatting 1:1</span>
+                          {:else}
+                            <span class="soul-pop-chat-hint">Click to chat 1:1</span>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
             <div class="detail-actions">
               <button class="detail-action-btn" title="Settings"><Settings size={14} strokeWidth={1.8} /></button>
               <button class="detail-action-btn" title="Fullscreen"><Maximize2 size={14} strokeWidth={1.8} /></button>
             </div>
           </header>
 
-          <!-- Widget canvas — clickable cards -->
+          <!-- Terminal pocket — full ECharts dashboard -->
+          {#if selectedPocket.id === "p14"}
+            <TerminalPocket />
+          {/if}
+
+          <!-- Widget canvas — clickable cards (for regular pockets) -->
+          {#if selectedPocket.id !== "p14"}
           <div class="widget-canvas">
             {#each selectedPocket.widgets as widget}
               {@const WIcon = widget.icon}
               {@const display = getWidgetDisplay(widget.name)}
+              {@const widgetSoul = selectedPocket ? getSoulForWidget(widget.name, selectedPocket.name) : null}
               <button class="widget-card {widget.span}" onclick={() => openWidget(widget)}>
                 <div class="widget-header">
                   <div class="widget-icon" style="color:{widget.color}"><WIcon size={14} strokeWidth={1.8} /></div>
                   <span class="widget-name">{widget.name}</span>
+                  {#if widgetSoul}
+                    <span class="widget-soul-badge" style="background:{widgetSoul.color}" title="{widgetSoul.role}: {widgetSoul.name}">{widgetSoul.initials}</span>
+                  {/if}
                   <span class="widget-grip"><GripVertical size={12} strokeWidth={1.5} /></span>
                 </div>
                 <div class="widget-body">
@@ -800,6 +974,7 @@
               </button>
             {/each}
           </div>
+          {/if}
         {:else}
           <!-- ========== SINGLE WIDGET DETAIL ========== -->
           {@const WDIcon = selectedWidget.icon}
@@ -887,6 +1062,28 @@
 
     <!-- ========== AI Sidebar (shared between views) ========== -->
     <aside class="ai-sidebar" style="width:{aiW}px">
+      <!-- Team chat mode bar -->
+      {#if selectedPocket && getTeamForPocket(selectedPocket.name).length > 0}
+        <div class="chat-mode-bar">
+          <button
+            class={chatTarget === "team" ? "chat-mode-btn chat-mode-active" : "chat-mode-btn"}
+            onclick={() => { chatTarget = "team"; }}
+          >
+            <Users size={12} strokeWidth={2} /> Team
+          </button>
+          {#each getTeamForPocket(selectedPocket?.name || "") as soul}
+            <button
+              class={chatTarget === soul.id ? "chat-mode-btn chat-mode-active" : "chat-mode-btn"}
+              style={chatTarget === soul.id ? `color:${soul.color};border-color:${soul.color}40` : ""}
+              onclick={() => { chatTarget = chatTarget === soul.id ? "team" : soul.id; }}
+            >
+              <span class="chat-mode-dot" style="background:{soul.color}"></span>
+              {soul.role}
+            </button>
+          {/each}
+        </div>
+      {/if}
+
       <!-- Back + New Chat controls -->
       {#if aiMessages.length > 0}
         <div class="ai-controls">
@@ -992,16 +1189,31 @@
           {#each aiMessages as msg (msg.id)}
             <div class={msg.role === "user" ? "ai-msg ai-msg-user" : "ai-msg ai-msg-agent"}>
               {#if msg.role === "agent"}
-                <div class="ai-msg-avatar"><Sparkles size={10} strokeWidth={2} /></div>
+                {#if msg.soul}
+                  <div class="ai-msg-avatar ai-soul-avatar" style="background:{msg.soul.color}" title="{msg.soul.role}: {msg.soul.name}">
+                    {msg.soul.initials}
+                  </div>
+                {:else}
+                  <div class="ai-msg-avatar"><Sparkles size={10} strokeWidth={2} /></div>
+                {/if}
               {/if}
               <div class={msg.role === "user" ? "ai-msg-bubble ai-bubble-user" : "ai-msg-bubble ai-bubble-agent"}>
+                {#if msg.role === "agent" && msg.soul}
+                  <span class="ai-soul-tag" style="color:{msg.soul.color}">{msg.soul.role}</span>
+                {/if}
                 {msg.text}
               </div>
             </div>
           {/each}
           {#if aiTyping}
             <div class="ai-msg ai-msg-agent">
-              <div class="ai-msg-avatar"><Sparkles size={10} strokeWidth={2} /></div>
+              {#if respondingSoul}
+                <div class="ai-msg-avatar ai-soul-avatar" style="background:{respondingSoul.color}">
+                  {respondingSoul.initials}
+                </div>
+              {:else}
+                <div class="ai-msg-avatar"><Sparkles size={10} strokeWidth={2} /></div>
+              {/if}
               <div class="ai-msg-bubble ai-bubble-agent ai-typing-bubble">
                 <span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>
               </div>
@@ -1033,6 +1245,9 @@
     z-index: 50; display: flex; flex-direction: column;
     overflow: hidden; opacity: 0; transition: opacity 200ms ease;
     border-top: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0 !important;
+    border-left: none !important; border-right: none !important; border-bottom: none !important;
+    box-shadow: none !important;
   }
   .pockets-visible { opacity: 1; }
   .body { display: flex; flex: 1; min-height: 0; }
@@ -1092,6 +1307,18 @@
   .pocket-desc { font-size: 12px; color: rgba(255,255,255,0.45); line-height: 1.4; margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .pocket-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .pocket-widgets, .pocket-time { display: flex; align-items: center; gap: 4px; font-size: 11px; color: rgba(255,255,255,0.35); }
+  .pocket-collabs { display: flex; align-items: center; }
+  .pocket-collab {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 7px; font-weight: 700; color: #fff;
+    border: 1.5px solid rgba(30,30,28,0.9); position: relative;
+    margin-left: -5px;
+  }
+  .pocket-collab:first-child { margin-left: 0; }
+  .pocket-collab-more {
+    background: rgba(255,255,255,0.12); font-size: 7px; color: rgba(255,255,255,0.55);
+  }
   .pocket-card-new { border-style: dashed; border-color: rgba(255,255,255,0.12); background: transparent; min-height: 160px; justify-content: center; align-items: center; }
   .pocket-card-new:hover { border-color: rgba(10,132,255,0.30); background: rgba(10,132,255,0.04); }
   .new-pocket-inner { display: flex; flex-direction: column; align-items: center; gap: 8px; color: rgba(255,255,255,0.40); font-size: 13px; font-weight: 500; }
@@ -1159,6 +1386,109 @@
     transition: opacity 0.12s;
   }
   .widget-card:hover .widget-grip { opacity: 1; }
+  .widget-soul-badge {
+    font-size: 8px; font-weight: 700; color: #fff; letter-spacing: 0.02em;
+    width: 18px; height: 18px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; opacity: 0.85;
+  }
+
+  /* Toolbar team avatars */
+  .toolbar-team {
+    display: flex; align-items: center; gap: 4px; margin-left: auto; margin-right: 6px;
+  }
+  .toolbar-soul {
+    position: relative; cursor: pointer;
+  }
+  .toolbar-avatar {
+    width: 24px; height: 24px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; color: #fff;
+    letter-spacing: 0.02em; transition: opacity 0.15s, box-shadow 0.15s;
+    border: 2px solid transparent;
+  }
+  .toolbar-avatar-selected {
+    border-color: rgba(255,255,255,0.50);
+    box-shadow: 0 0 8px rgba(255,255,255,0.15);
+  }
+  .toolbar-soul-dot {
+    width: 6px; height: 6px; border-radius: 50%; position: absolute;
+    top: -1px; right: -1px; box-shadow: 0 0 0 2px rgba(0,0,0,0.6);
+  }
+
+  /* Soul hover popover */
+  .soul-popover {
+    position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
+    width: 220px; z-index: 100;
+    background: rgba(30,30,28,0.96); border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px; padding: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    backdrop-filter: blur(12px);
+  }
+  .soul-pop-header { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .soul-pop-avatar {
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #fff;
+  }
+  .soul-pop-info { display: flex; flex-direction: column; gap: 1px; }
+  .soul-pop-name { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.90); }
+  .soul-pop-focus { font-size: 10px; color: rgba(255,255,255,0.45); }
+
+  .soul-pop-stats { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .soul-pop-stat { display: flex; align-items: center; gap: 6px; }
+  .soul-pop-stat-label { font-size: 10px; color: rgba(255,255,255,0.40); width: 52px; flex-shrink: 0; }
+  .soul-pop-stat-value { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.80); }
+  .soul-pop-bar {
+    flex: 1; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.08); overflow: hidden;
+  }
+  .soul-pop-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+  .soul-pop-action {
+    padding: 6px 0; border-top: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 6px;
+  }
+  .soul-pop-action-label { font-size: 9px; color: rgba(255,255,255,0.30); text-transform: uppercase; letter-spacing: 0.04em; display: block; margin-bottom: 3px; }
+  .soul-pop-action-text { font-size: 11px; color: rgba(255,255,255,0.65); line-height: 1.3; }
+
+  .soul-pop-footer { text-align: center; }
+  .soul-pop-chat-active { font-size: 10px; font-weight: 600; }
+  .soul-pop-chat-hint { font-size: 10px; color: rgba(255,255,255,0.30); }
+
+  /* Chat mode bar */
+  .chat-mode-bar {
+    display: flex; gap: 4px; padding: 6px 8px; flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .chat-mode-bar::-webkit-scrollbar { display: none; }
+  .chat-mode-btn {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.40);
+    padding: 3px 8px; border-radius: 6px; border: 1px solid transparent;
+    background: none; cursor: pointer; white-space: nowrap;
+    transition: color 0.12s, background 0.12s, border-color 0.12s;
+  }
+  .chat-mode-btn:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.05); }
+  .chat-mode-active {
+    color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.12);
+  }
+  .chat-mode-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  /* Soul-attributed AI messages */
+  .ai-soul-avatar {
+    font-size: 7px; font-weight: 700; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    letter-spacing: 0.02em;
+  }
+  .ai-soul-tag {
+    display: block; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.04em; margin-bottom: 3px;
+    text-transform: uppercase;
+  }
 
   .widget-body { flex: 1; padding-top: 2px; }
 
