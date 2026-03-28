@@ -8,6 +8,7 @@
 #   - 2026-02-09: Converted to lazy __getattr__ to avoid ImportError when optional deps missing
 #   - 2026-02-17: Added HealthCheckTool, ErrorLogTool, ConfigDoctorTool for health engine
 #   - 2026-03-12: Added EditFileTool, RunPythonTool, InstallPackageTool (issue #581)
+#   - 2026-03-28: Added Fabric + Instinct enterprise tools (guarded by ee/ availability)
 
 import importlib as _importlib
 
@@ -76,13 +77,37 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DiscordCLITool": (".discord", "DiscordCLITool"),
 }
 
+# Enterprise tools (require ee/ module) — guarded so community installs don't break.
+try:
+    from pocketpaw.tools.builtin.fabric_tools import (
+        FabricCreateTool,
+        FabricQueryTool,
+        FabricStatsTool,
+    )
+    from pocketpaw.tools.builtin.instinct_tools import (
+        InstinctAuditTool,
+        InstinctPendingTool,
+        InstinctProposeTool,
+    )
+
+    _EE_TOOLS: list[type] = [
+        FabricQueryTool, FabricCreateTool, FabricStatsTool,
+        InstinctProposeTool, InstinctPendingTool, InstinctAuditTool,
+    ]
+    _EE_NAMES = {cls.__name__: cls for cls in _EE_TOOLS}
+except ImportError:
+    _EE_TOOLS = []
+    _EE_NAMES: dict[str, type] = {}
+
 
 def __getattr__(name: str):
     if name in _LAZY_IMPORTS:
         module_path, attr_name = _LAZY_IMPORTS[name]
         module = _importlib.import_module(module_path, __package__)
         return getattr(module, attr_name)
+    if name in _EE_NAMES:
+        return _EE_NAMES[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = list(_LAZY_IMPORTS.keys())
+__all__ = list(_LAZY_IMPORTS.keys()) + list(_EE_NAMES.keys())
