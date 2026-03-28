@@ -79,6 +79,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "AddWidgetTool": (".pocket", "AddWidgetTool"),
     "RemoveWidgetTool": (".pocket", "RemoveWidgetTool"),
     "DiscordCLITool": (".discord", "DiscordCLITool"),
+    "ConnectorListTool": (".connector_tools", "ConnectorListTool"),
+    "ConnectorConnectTool": (".connector_tools", "ConnectorConnectTool"),
+    "ConnectorExecuteTool": (".connector_tools", "ConnectorExecuteTool"),
+    "ConnectorActionsTool": (".connector_tools", "ConnectorActionsTool"),
 }
 
 # Enterprise tools (require ee/ module) — guarded so community installs don't break.

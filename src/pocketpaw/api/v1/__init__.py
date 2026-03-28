@@ -44,6 +44,7 @@ _V1_ROUTERS: list[tuple[str, str, str]] = [
     ("pocketpaw.api.v1.agent_status", "router", "Status"),
     ("pocketpaw.api.v1.soul", "router", "Soul"),
     ("pocketpaw.api.v1.pockets", "router", "Pockets"),
+    ("pocketpaw.api.v1.connectors", "router", "Connectors"),
     ("pocketpaw.audit.router", "router", "Audit"),
 ]
 

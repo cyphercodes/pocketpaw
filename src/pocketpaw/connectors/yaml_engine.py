@@ -139,6 +139,13 @@ class DirectRESTAdapter:
         method = act_def.get("method", "GET").upper()
         url = act_def.get("url", "")
 
+        # If no hardcoded URL, build from BASE_URL credential + path param
+        if not url and method != "LOCAL":
+            base = self._credentials.get("BASE_URL", "")
+            path = params.pop("path", "")
+            if base and path:
+                url = base.rstrip("/") + "/" + path.lstrip("/")
+
         # LOCAL actions (CSV import etc.) don't make HTTP calls
         if method == "LOCAL":
             return ActionResult(success=True, data={"action": action, "params": params})
@@ -170,15 +177,28 @@ class DirectRESTAdapter:
         try:
             import httpx
 
+            # Detect form-encoded APIs (Stripe, etc.) from URL or content_type hint
+            content_type = act_def.get("content_type", "")
+            use_form = content_type == "form" or "stripe.com" in url
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 if method == "GET":
                     resp = await client.get(url, params=query_params, headers=headers)
                 elif method == "POST":
-                    resp = await client.post(url, json=body_data, params=query_params, headers=headers)
+                    if use_form:
+                        resp = await client.post(url, data=body_data, params=query_params, headers=headers)
+                    else:
+                        resp = await client.post(url, json=body_data, params=query_params, headers=headers)
                 elif method == "PUT":
-                    resp = await client.put(url, json=body_data, params=query_params, headers=headers)
+                    if use_form:
+                        resp = await client.put(url, data=body_data, params=query_params, headers=headers)
+                    else:
+                        resp = await client.put(url, json=body_data, params=query_params, headers=headers)
                 elif method == "PATCH":
-                    resp = await client.patch(url, json=body_data, params=query_params, headers=headers)
+                    if use_form:
+                        resp = await client.patch(url, data=body_data, params=query_params, headers=headers)
+                    else:
+                        resp = await client.patch(url, json=body_data, params=query_params, headers=headers)
                 elif method == "DELETE":
                     resp = await client.delete(url, params=query_params, headers=headers)
                 else:
@@ -187,8 +207,13 @@ class DirectRESTAdapter:
                 resp.raise_for_status()
                 data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text
 
-                # Count records if response is a list
-                records = len(data) if isinstance(data, list) else 1
+                # Count records — handle wrapped responses (Stripe: {data: [...]})
+                if isinstance(data, list):
+                    records = len(data)
+                elif isinstance(data, dict) and isinstance(data.get("data"), list):
+                    records = len(data["data"])
+                else:
+                    records = 1
 
                 return ActionResult(success=True, data=data, records_affected=records)
 

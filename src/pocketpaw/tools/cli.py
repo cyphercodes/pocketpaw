@@ -21,6 +21,10 @@ import sys
 from pocketpaw.tools.builtin import (
     AddWidgetTool,
     CalendarCreateTool,
+    ConnectorActionsTool,
+    ConnectorConnectTool,
+    ConnectorExecuteTool,
+    ConnectorListTool,
     CalendarListTool,
     CalendarPrepTool,
     ClearSessionTool,
@@ -129,6 +133,10 @@ _TOOLS = {
         CreatePocketTool(),
         AddWidgetTool(),
         RemoveWidgetTool(),
+        ConnectorListTool(),
+        ConnectorActionsTool(),
+        ConnectorConnectTool(),
+        ConnectorExecuteTool(),
     ]
 }
 
