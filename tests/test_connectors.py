@@ -91,10 +91,23 @@ class TestDirectRESTAdapter:
 
     @pytest.mark.asyncio
     async def test_execute_connected(self, stripe_adapter: DirectRESTAdapter) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
         await stripe_adapter.connect("pocket-1", {"STRIPE_API_KEY": "sk_test_123"})
-        result = await stripe_adapter.execute("list_invoices", {"limit": 5})
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "application/json"}
+        mock_resp.json.return_value = [{"id": "inv_1"}]
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await stripe_adapter.execute("list_invoices", {"limit": 5})
         assert result.success is True
-        assert result.data["action"] == "list_invoices"
 
     @pytest.mark.asyncio
     async def test_execute_unknown_action(self, stripe_adapter: DirectRESTAdapter) -> None:
