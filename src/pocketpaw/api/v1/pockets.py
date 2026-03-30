@@ -1,4 +1,9 @@
 # Pocket chat router — dedicated endpoint for pocket creation.
+# Updated: 2026-03-30 — Detect add_widget/remove_widget from tool_start
+#   (Bash command), not just tool_result (which is truncated to 200 chars
+#   by loop.py). System prompt now includes CLI bridge instructions
+#   (python -m pocketpaw.tools.cli) so Claude SDK backend can invoke
+#   create_pocket/add_widget/remove_widget via Bash tool.
 # Updated: system prompt now teaches Ripple UniversalSpec v2.0 format
 # with intent='dashboard'. Pocket tools publish dedicated SystemEvents
 # (pocket_created / pocket_mutation) via the AgentLoop, so the SSE
@@ -35,6 +40,21 @@ _POCKET_SYSTEM_CONTEXT = """\
 You are running inside PocketPaw OS, a desktop workspace app.
 The user wants a "pocket" — a themed workspace with data widgets.
 
+HOW TO USE POCKET TOOLS:
+You invoke pocket tools via Bash using the CLI bridge:
+  python -m pocketpaw.tools.cli create_pocket '<JSON>'
+  python -m pocketpaw.tools.cli add_widget '<JSON>'
+  python -m pocketpaw.tools.cli remove_widget '<JSON>'
+
+Example (create):
+  python -m pocketpaw.tools.cli create_pocket '{"title":"My Pocket","description":"Demo","category":"research","widgets":[{"type":"metric","title":"Users","size":"sm","data":{"value":"10K","label":"Total Users","trend":"+5%"}}]}'
+
+Example (add widget to existing pocket):
+  python -m pocketpaw.tools.cli add_widget '{"pocket_id":"ai-abc123","widget":{"type":"chart","title":"Growth","size":"md","data":[{"label":"Q1","value":100},{"label":"Q2","value":200}],"props":{"type":"line"}}}'
+
+Example (remove widget):
+  python -m pocketpaw.tools.cli remove_widget '{"pocket_id":"ai-abc123","widget_id":"ai-abc123-w2"}'
+
 RULES:
 1. Do in-depth research FIRST using a MULTI-AGENT approach:
    - Spawn PARALLEL web_search calls for different aspects of the topic.
@@ -42,12 +62,9 @@ RULES:
    - For a topic: run separate searches for stats, trends, key players, recent events, forecasts.
    - Aim for 4-6 parallel searches covering distinct angles. Do NOT do one search at a time.
    - After initial results, do follow-up searches to fill gaps or verify numbers.
-2. Use ONLY these tools for pocket operations:
-   - create_pocket: Create a new pocket (pass the full JSON spec)
-   - add_widget: Add a widget to an EXISTING pocket (pass pocket_id + widget spec)
-   - remove_widget: Remove a widget from an EXISTING pocket (pass pocket_id + widget_id)
+2. Use ONLY the CLI bridge above for pocket operations. Pass the FULL JSON as a single-quoted string argument.
 3. NEVER use curl, fetch, HTTP requests, or REST API calls to manage pockets.
-   NEVER try to access /api/v1/pockets or any HTTP endpoints. Use the tools above.
+   NEVER try to access /api/v1/pockets or any HTTP endpoints. Use the CLI bridge above.
 4. NEVER create HTML files or write files to disk.
 4. Every widget MUST have real, concrete data values — never leave data empty, null,
    or with placeholder text like "N/A", "TBD", or "...". If you cannot find a specific
@@ -127,11 +144,11 @@ Create 6-8 widgets with REAL data from your research. Prioritize metrics and cha
 
 MODIFYING EXISTING POCKETS:
 When a <current-pocket> tag is present in the user message, you are editing that pocket.
-- To ADD a widget: call add_widget with the pocket id and the widget spec (same format as above).
-- To REMOVE a widget: call remove_widget with the pocket id and the widget id.
-- To RECREATE the entire pocket: call create_pocket with all widgets (replaces the current spec).
+- To ADD a widget: python -m pocketpaw.tools.cli add_widget '{"pocket_id":"<id>","widget":{...}}'
+- To REMOVE a widget: python -m pocketpaw.tools.cli remove_widget '{"pocket_id":"<id>","widget_id":"<wid>"}'
+- To RECREATE the entire pocket: python -m pocketpaw.tools.cli create_pocket '{"title":...,"widgets":[...]}'
 - The pocket id and widget ids are provided in the <current-pocket> tag.
-- Do NOT use HTTP/curl/fetch — only use the tools listed above.
+- Do NOT use HTTP/curl/fetch — only use the CLI bridge commands above.
 </pocket-creation-context>
 
 """
@@ -158,6 +175,101 @@ def _try_extract_pocket_from_bash(command: str) -> dict | None:
         return json.loads(match.group(1))
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _prepare_widget(w: dict, pocket_id: str, index: int, color: str = "#0A84FF") -> dict | None:
+    """Transform a single raw widget dict into Ripple-ready format.
+
+    Returns the transformed widget or None if the widget is unusable.
+    """
+    if not isinstance(w, dict):
+        return None
+
+    wtype = w.get("type", "text")
+    data = w.get("data")
+    title = w.get("title") or w.get("name") or f"Widget {index + 1}"
+    wid = w.get("id") or f"{pocket_id}-w{index}"
+
+    if data is None:
+        logger.warning("Dropping widget %r: no data", title)
+        return None
+
+    rw: dict = {
+        "id": wid,
+        "type": wtype,
+        "title": title,
+        "size": w.get("size", "sm"),
+        "props": {**(w.get("props") or {}), "color": w.get("color") or color},
+    }
+
+    if wtype == "metric":
+        if not isinstance(data, dict) or not data.get("value"):
+            logger.warning("Dropping metric %r: missing value", title)
+            return None
+        rw["data"] = data
+
+    elif wtype == "chart":
+        if not isinstance(data, list) or len(data) == 0:
+            logger.warning("Dropping chart %r: empty data", title)
+            return None
+        cleaned = []
+        for pt in data:
+            if isinstance(pt, dict) and pt.get("label") and pt.get("value") is not None:
+                try:
+                    cleaned.append({"label": pt["label"], "value": float(pt["value"])})
+                except (ValueError, TypeError):
+                    pass
+        if len(cleaned) < 2:
+            logger.warning("Dropping chart %r: <2 valid points", title)
+            return None
+        rw["data"] = cleaned
+
+    elif wtype == "table":
+        if not isinstance(data, dict):
+            logger.warning("Dropping table %r: data not object", title)
+            return None
+        cols = data.get("columns", [])
+        rows = data.get("data", [])
+        if not cols or not rows:
+            logger.warning("Dropping table %r: empty columns/rows", title)
+            return None
+        rw["props"]["columns"] = [{"key": c, "label": c} for c in cols]
+        rw["data"] = [
+            {cols[ci]: cell for ci, cell in enumerate(row) if ci < len(cols)}
+            for row in rows
+            if isinstance(row, list)
+        ]
+
+    elif wtype == "feed":
+        if isinstance(data, dict):
+            items = data.get("items", [])
+        elif isinstance(data, list):
+            items = data
+        else:
+            logger.warning("Dropping feed %r: bad data shape", title)
+            return None
+        items = [it for it in items if isinstance(it, dict) and it.get("text")]
+        if not items:
+            logger.warning("Dropping feed %r: no items", title)
+            return None
+        rw["data"] = items
+
+    elif wtype == "text":
+        if isinstance(data, dict) and "content" in data:
+            rw["data"] = str(data["content"])
+        else:
+            rw["data"] = str(data) if data else ""
+
+    elif wtype == "terminal":
+        if isinstance(data, dict) and "lines" in data:
+            rw["data"] = data["lines"]
+        else:
+            rw["data"] = data
+
+    else:
+        rw["data"] = data
+
+    return rw
 
 
 def _prepare_pocket_spec(spec: dict) -> dict | None:
@@ -384,13 +496,14 @@ async def pocket_chat_stream(body: ChatRequest):
                 # Legacy fallback: extract pocket spec from Bash tool_start
                 if etype == "tool_start" and not pocket_emitted:
                     cmd = ""
-                    inp = edata.get("input", {})
+                    inp = edata.get("input") or edata.get("params") or {}
                     if isinstance(inp, dict):
                         cmd = inp.get("command", "")
                     elif isinstance(inp, str):
                         cmd = inp
 
-                    if "create_pocket" in cmd:
+                    # Detect create_pocket
+                    if "create_pocket" in cmd and not pocket_emitted:
                         spec = _try_extract_pocket_from_bash(cmd)
                         spec = _prepare_pocket_spec(spec) if spec else None
                         if spec:
