@@ -3,23 +3,16 @@
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
-from pocketpaw.connectors.registry import ConnectorRegistry
+from pocketpaw.connectors.registry import get_connector_registry
 from pocketpaw.tools.protocol import BaseTool
 
 logger = logging.getLogger(__name__)
 
-# Singleton registry — shared across all tool instances.
-_registry: ConnectorRegistry | None = None
 
-
-def _get_registry() -> ConnectorRegistry:
-    global _registry
-    if _registry is None:
-        _registry = ConnectorRegistry(Path("connectors"))
-    return _registry
+def _get_registry():
+    return get_connector_registry()
 
 
 class ConnectorListTool(BaseTool):

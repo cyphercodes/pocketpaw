@@ -4,28 +4,21 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from pocketpaw.api.deps import require_scope
-from pocketpaw.connectors.registry import ConnectorRegistry
+from pocketpaw.connectors.registry import get_connector_registry
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Connectors"], dependencies=[Depends(require_scope("connectors"))])
 
-# Singleton registry — lazily initialized.
-_registry: ConnectorRegistry | None = None
 
-
-def _get_registry() -> ConnectorRegistry:
-    global _registry
-    if _registry is None:
-        _registry = ConnectorRegistry(Path("connectors"))
-    return _registry
+def _get_registry():
+    return get_connector_registry()
 
 
 # ── Request / Response models ────────────────────────────────────────────────

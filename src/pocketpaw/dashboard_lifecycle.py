@@ -272,6 +272,17 @@ async def startup_event(
     except Exception as e:
         logger.warning("Failed to initialize MCP manager: %s", e)
 
+    # Restore persisted connector connections
+    try:
+        from pocketpaw.connectors.registry import get_connector_registry
+
+        reg = get_connector_registry()
+        restored = await reg.restore()
+        if restored:
+            logger.info("Restored %d connector(s) from saved state", restored)
+    except Exception as e:
+        logger.warning("Failed to restore connectors: %s", e)
+
     # Initialize health engine and run startup checks
     try:
         from pocketpaw.health import get_health_engine

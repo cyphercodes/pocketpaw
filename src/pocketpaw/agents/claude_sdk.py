@@ -817,9 +817,9 @@ class ClaudeSDKBackend:
 
             # Inject connector instructions so the agent can use data sources
             try:
-                from pocketpaw.connectors.registry import ConnectorRegistry
+                from pocketpaw.connectors.registry import get_connector_registry
 
-                reg = ConnectorRegistry()
+                reg = get_connector_registry()
                 if reg.available:
                     names = ", ".join(c["name"] for c in reg.available)
                     identity += (
