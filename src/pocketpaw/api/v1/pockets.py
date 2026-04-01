@@ -135,15 +135,17 @@ When a <current-pocket> tag is present in the user message, you are editing that
 
 
 def _extract_chat_id(session_id: str | None) -> str:
-    if session_id and session_id.startswith(_WS_PREFIX):
-        return session_id[len(_WS_PREFIX) :]
-    return session_id or uuid.uuid4().hex
+    """Extract raw chat_id from a client-supplied session_id.
+
+    Reuses the same logic as chat.py so session IDs are compatible.
+    """
+    from pocketpaw.api.v1.chat import _extract_chat_id as _chat_extract
+    return _chat_extract(session_id)
 
 
 def _to_safe_key(chat_id: str) -> str:
-    if chat_id.startswith(_WS_PREFIX):
-        return chat_id
-    return f"{_WS_PREFIX}{chat_id}"
+    from pocketpaw.api.v1.chat import _to_safe_key as _chat_safe_key
+    return _chat_safe_key(chat_id)
 
 
 def _try_extract_pocket_from_bash(command: str) -> dict | None:
@@ -482,6 +484,12 @@ async def pocket_chat_stream(body: ChatRequest):
     if body.pocket_context:
         meta["pocket_context"] = body.pocket_context.model_dump(exclude_none=True)
 
+    # Subscribe bridge BEFORE publishing the message — otherwise the agent
+    # can process and respond before the bridge is listening, causing chunks
+    # and stream_end to be lost (race condition).
+    bridge = _APISessionBridge(chat_id)
+    await bridge.start()
+
     msg = InboundMessage(
         channel=Channel.WEBSOCKET,
         sender_id=chat_id,
@@ -492,9 +500,6 @@ async def pocket_chat_stream(body: ChatRequest):
     )
     bus = get_message_bus()
     await bus.publish_inbound(msg)
-
-    bridge = _APISessionBridge(chat_id)
-    await bridge.start()
 
     pocket_emitted = False
 
