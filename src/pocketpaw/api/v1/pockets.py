@@ -89,6 +89,7 @@ Common patterns:
   - Article with sidebar: grid(2, "2fr 1fr") > [flex(column) > [...content], flex(column) > [...sidebar]]
   - Research page: flex(column) > [heading, sources-bar, text, chart, callout, follow-up]
 
+
 Example (add widget to existing pocket):
   python -m pocketpaw.tools.cli add_widget '{"pocket_id":"ai-abc123","widget":{"type":"chart","title":"Growth","size":"md","data":[{"label":"Q1","value":100},{"label":"Q2","value":200}],"props":{"type":"line"}}}'
 
@@ -388,11 +389,16 @@ def _prepare_pocket_spec(spec: dict) -> dict | None:
                 logger.warning("Dropping table %r: empty columns/rows", title)
                 continue
             rw["props"]["columns"] = [{"accessorKey": c, "header": c} for c in cols]
-            rw["data"] = [
-                {cols[ci]: cell for ci, cell in enumerate(row) if ci < len(cols)}
-                for row in rows
-                if isinstance(row, list)
-            ]
+            # Rows may be lists (LLM-generated) or dicts (from data sources like MongoDB)
+            processed_rows = []
+            for row in rows:
+                if isinstance(row, list):
+                    processed_rows.append(
+                        {cols[ci]: cell for ci, cell in enumerate(row) if ci < len(cols)}
+                    )
+                elif isinstance(row, dict):
+                    processed_rows.append(row)
+            rw["data"] = processed_rows
 
         elif wtype == "feed":
             if isinstance(data, dict):
@@ -468,15 +474,21 @@ async def pocket_chat_stream(body: ChatRequest):
     chat_id = _extract_chat_id(body.session_id)
     safe_key = _to_safe_key(chat_id)
 
-    augmented_content = _POCKET_SYSTEM_CONTEXT + body.content
+    # Build metadata with pocket context if provided
+    meta: dict = {
+        "source": "pocket_chat",
+        "pocket_system_context": _POCKET_SYSTEM_CONTEXT,
+    }
+    if body.pocket_context:
+        meta["pocket_context"] = body.pocket_context.model_dump(exclude_none=True)
 
     msg = InboundMessage(
         channel=Channel.WEBSOCKET,
-        sender_id="api_client",
+        sender_id=chat_id,
         chat_id=chat_id,
-        content=augmented_content,
+        content=body.content,
         media=body.media,
-        metadata={"source": "pocket_chat"},
+        metadata=meta,
     )
     bus = get_message_bus()
     await bus.publish_inbound(msg)

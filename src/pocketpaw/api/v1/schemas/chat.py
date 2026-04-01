@@ -18,6 +18,16 @@ class FileContext(BaseModel):
     source: str | None = None
 
 
+class PocketContext(BaseModel):
+    """Pocket context sent from the desktop client for pocket-scoped chat."""
+
+    id: str
+    name: str
+    widgets: list[dict] = []
+    tool_policy: dict = {}
+    model: str | None = None
+
+
 class ChatRequest(BaseModel):
     """Send a message for processing."""
 
@@ -25,6 +35,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     media: list[str] = []
     file_context: FileContext | None = None
+    pocket_context: PocketContext | None = None
 
 
 class ChatChunk(BaseModel):

@@ -137,6 +137,10 @@ class AgentContextBuilder:
                     channel_instructions += "\n\n## Current Context\n" + "\n".join(ctx_lines)
                 parts.append(channel_instructions)
 
+        # 4c. Inject pocket creation context (from pocket chat endpoint)
+        if metadata and metadata.get("pocket_system_context"):
+            parts.append(metadata["pocket_system_context"])
+
         # 5. Inject session key for session management tools
         if session_key:
             parts.append(
@@ -208,6 +212,14 @@ class AgentContextBuilder:
             except Exception:
                 pass  # AGENTS.md failure never breaks prompt building
 
+        # 10. Inject GWS CLI guidance when google-workspace MCP server is active
+        try:
+            gws_block = self._load_gws_instructions()
+            if gws_block:
+                parts.append(gws_block)
+        except Exception:
+            pass  # GWS injection failure never breaks prompt building
+
         return "\n\n".join(parts)
 
     @staticmethod
@@ -228,3 +240,20 @@ class AgentContextBuilder:
             return path.read_text(encoding="utf-8").strip()
         except Exception:
             return ""
+
+    @staticmethod
+    def _load_gws_instructions() -> str:
+        """Load GWS CLI guidance if the google-workspace MCP server is active."""
+        from pathlib import Path
+
+        from pocketpaw.mcp.config import load_mcp_config
+
+        configs = load_mcp_config()
+        gws_active = any(c.name == "google-workspace" and c.enabled for c in configs)
+        if not gws_active:
+            return ""
+
+        path = Path(__file__).parent / "gws.md"
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8").strip()
