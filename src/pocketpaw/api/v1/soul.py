@@ -1,5 +1,8 @@
 """Soul Protocol API endpoints.
 
+Updated: 2026-04-01 — Added GET /soul/dashboard endpoint that returns all soul
+data in a single JSON response (identity, OCEAN, state, core memory, communication,
+skills, bond, memory counts, evolution history, self-model).
 Updated: 2026-03-29 — v0.2.8: Enriched /soul/status with did, focus, memory_count,
 bond, core_memory. Added: GET/PATCH /soul/core-memory, POST /soul/remember,
 POST /soul/recall, POST /soul/forget.
@@ -64,6 +67,205 @@ async def get_soul_status():
             pass
 
     return result
+
+
+@router.get("/soul/dashboard")
+async def get_soul_dashboard():
+    """Return all soul data in a single JSON response for dashboard rendering."""
+    from datetime import datetime
+
+    from pocketpaw.soul.manager import get_soul_manager
+
+    mgr = get_soul_manager()
+    if mgr is None or mgr.soul is None:
+        return {"enabled": False}
+
+    soul = mgr.soul
+
+    # ── Identity ──
+    identity_data: dict = {
+        "name": soul.name,
+        "archetype": getattr(soul, "archetype", ""),
+        "did": soul.did if hasattr(soul, "did") else None,
+        "born": soul.born.isoformat() if hasattr(soul, "born") and soul.born else None,
+        "age_days": (datetime.now() - soul.born).days if hasattr(soul, "born") and soul.born else 0,
+        "lifecycle": soul.lifecycle.value if hasattr(soul, "lifecycle") else None,
+        "values": (
+            soul.identity.core_values
+            if hasattr(soul, "identity") and hasattr(soul.identity, "core_values")
+            else []
+        ),
+        "incarnation": (
+            soul.identity.incarnation
+            if hasattr(soul, "identity") and hasattr(soul.identity, "incarnation")
+            else 1
+        ),
+    }
+
+    # ── OCEAN personality ──
+    ocean_data: dict = {}
+    try:
+        p = soul.dna.personality
+        ocean_data = {
+            "openness": p.openness,
+            "conscientiousness": p.conscientiousness,
+            "extraversion": p.extraversion,
+            "agreeableness": p.agreeableness,
+            "neuroticism": p.neuroticism,
+        }
+    except Exception:
+        ocean_data = {
+            "openness": 0.5,
+            "conscientiousness": 0.5,
+            "extraversion": 0.5,
+            "agreeableness": 0.5,
+            "neuroticism": 0.5,
+        }
+
+    # ── State ──
+    state = soul.state
+    state_data: dict = {
+        "mood": getattr(state, "mood", "neutral"),
+        "energy": getattr(state, "energy", 100.0),
+        "social_battery": getattr(state, "social_battery", 100.0),
+        "focus": getattr(state, "focus", "medium"),
+    }
+    # Ensure mood is a string value, not an enum
+    if hasattr(state_data["mood"], "value"):
+        state_data["mood"] = state_data["mood"].value
+
+    # ── Core memory ──
+    core_memory_data: dict = {"persona": "", "human": ""}
+    try:
+        if hasattr(soul, "get_core_memory"):
+            cm = soul.get_core_memory()
+            core_memory_data = {
+                "persona": getattr(cm, "persona", ""),
+                "human": getattr(cm, "human", ""),
+            }
+    except Exception:
+        pass
+
+    # ── Communication style ──
+    comm_data: dict = {
+        "warmth": "moderate",
+        "verbosity": "moderate",
+        "humor_style": "none",
+        "emoji_usage": "none",
+    }
+    try:
+        comm = soul.dna.communication
+        comm_data = {
+            "warmth": getattr(comm, "warmth", "moderate"),
+            "verbosity": getattr(comm, "verbosity", "moderate"),
+            "humor_style": getattr(comm, "humor_style", "none"),
+            "emoji_usage": getattr(comm, "emoji_usage", "none"),
+        }
+    except Exception:
+        pass
+
+    # ── Skills ──
+    skills_data: list = []
+    try:
+        if hasattr(soul, "skills") and soul.skills:
+            for skill in soul.skills.skills:
+                skills_data.append({
+                    "id": skill.id,
+                    "name": skill.name,
+                    "level": skill.level,
+                    "xp": skill.xp,
+                    "xp_to_next": skill.xp_to_next,
+                })
+    except Exception:
+        pass
+
+    # ── Bond ──
+    bond_data: dict | None = None
+    try:
+        if hasattr(soul, "bond") and soul.bond:
+            bond = soul.bond
+            bond_data = {
+                "bonded_to": getattr(bond, "bonded_to", None) or None,
+                "strength": getattr(bond, "bond_strength", 50.0),
+                "interaction_count": getattr(bond, "interaction_count", 0),
+                "bonded_at": (
+                    bond.bonded_at.isoformat()
+                    if hasattr(bond, "bonded_at") and bond.bonded_at
+                    else None
+                ),
+            }
+    except Exception:
+        pass
+
+    # ── Memory counts ──
+    memory_data: dict = {
+        "episodic": 0,
+        "semantic": 0,
+        "procedural": 0,
+        "graph_nodes": 0,
+        "total": soul.memory_count if hasattr(soul, "memory_count") else 0,
+    }
+    try:
+        mem = soul._memory
+        memory_data["episodic"] = len(mem._episodic.entries())
+        memory_data["semantic"] = len(mem._semantic.facts())
+        memory_data["procedural"] = len(mem._procedural.entries())
+        memory_data["graph_nodes"] = len(mem._graph.entities())
+    except Exception:
+        pass
+
+    # ── Evolution history (last 20) ──
+    evolution_data: list = []
+    try:
+        history = []
+        if hasattr(soul, "evolution_history"):
+            history = soul.evolution_history
+        elif hasattr(soul, "_evolution") and hasattr(soul._evolution, "history"):
+            history = soul._evolution.history
+        for mut in history[-20:]:
+            evolution_data.append({
+                "id": getattr(mut, "id", ""),
+                "trait": getattr(mut, "trait", ""),
+                "old_value": getattr(mut, "old_value", ""),
+                "new_value": getattr(mut, "new_value", ""),
+                "reason": getattr(mut, "reason", ""),
+                "approved": getattr(mut, "approved", None),
+                "proposed_at": (
+                    mut.proposed_at.isoformat()
+                    if hasattr(mut, "proposed_at") and mut.proposed_at
+                    else None
+                ),
+            })
+    except Exception:
+        pass
+
+    # ── Self-model ──
+    self_model_data: list = []
+    try:
+        if hasattr(soul, "self_model") and soul.self_model:
+            images = soul.self_model.get_active_self_images()
+            for img in images:
+                self_model_data.append({
+                    "domain": img.domain,
+                    "confidence": img.confidence,
+                    "evidence_count": img.evidence_count,
+                })
+    except Exception:
+        pass
+
+    return {
+        "enabled": True,
+        "identity": identity_data,
+        "ocean": ocean_data,
+        "state": state_data,
+        "core_memory": core_memory_data,
+        "communication": comm_data,
+        "skills": skills_data,
+        "bond": bond_data,
+        "memory": memory_data,
+        "evolution": evolution_data,
+        "self_model": self_model_data,
+    }
 
 
 @router.get("/soul/core-memory")
