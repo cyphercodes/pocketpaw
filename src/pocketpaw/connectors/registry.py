@@ -1,6 +1,8 @@
 # Connector registry — discovers and manages available connectors.
 # Created: 2026-03-27 — Scans connectors/ dir for YAML definitions.
 # Updated: 2026-03-30 — Native adapter support for database connectors.
+# Updated: 2026-04-01 — Added Firebase CLI adapter registration.
+# Updated: 2026-04-01 — Added GCP adapter for gcloud CLI integration.
 
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ class AnyAdapter(Protocol):
 # SQL databases use DatabaseAdapter, MongoDB uses MongoDBAdapter.
 _SQL_CONNECTORS: set[str] = {"postgresql", "mysql", "mssql", "sqlite"}
 _NOSQL_CONNECTORS: set[str] = {"mongodb"}
+_CLI_CONNECTORS: set[str] = {"firebase", "gcp"}
 
 
 def _create_native_adapter(connector_name: str) -> AnyAdapter | None:
@@ -49,6 +52,15 @@ def _create_native_adapter(connector_name: str) -> AnyAdapter | None:
         try:
             from pocketpaw.connectors.mongo_adapter import MongoDBAdapter
             return MongoDBAdapter()
+        except Exception:
+            return None
+    if connector_name in _CLI_CONNECTORS:
+        try:
+            if connector_name == "gcp":
+                from pocketpaw.connectors.gcp_adapter import GCPAdapter
+                return GCPAdapter()
+            from pocketpaw.connectors.firebase_adapter import FirebaseAdapter
+            return FirebaseAdapter()
         except Exception:
             return None
     return None
