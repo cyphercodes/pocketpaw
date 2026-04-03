@@ -22,6 +22,7 @@ class Invite(Document):
     token: Indexed(str, unique=True)  # type: ignore[valid-type]
     group: str | None = None  # Group ID — if invite came from a group, auto-add on accept
     accepted: bool = False
+    revoked: bool = False
     expires_at: datetime = Field(default_factory=_default_expiry)
 
     @property

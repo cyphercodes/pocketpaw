@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from beanie import Indexed
 from pydantic import BaseModel, Field
 
@@ -39,6 +41,7 @@ class Message(TimestampedDocument):
     attachments: list[Attachment] = Field(default_factory=list)
     reactions: list[Reaction] = Field(default_factory=list)
     edited: bool = False
+    edited_at: datetime | None = None
     deleted: bool = False  # Soft delete
 
     class Settings:

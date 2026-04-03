@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from beanie import Indexed
 
 from ee.cloud.models.base import TimestampedDocument
@@ -24,6 +26,7 @@ class Notification(TimestampedDocument):
     body: str = ""
     source: NotificationSource | None = None
     read: bool = False
+    expires_at: datetime | None = None
 
     class Settings:
         name = "notifications"

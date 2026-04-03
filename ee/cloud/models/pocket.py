@@ -53,7 +53,10 @@ class Pocket(TimestampedDocument):
     agents: list[Any] = Field(default_factory=list)  # Agent IDs or populated objects
     widgets: list[Widget] = Field(default_factory=list)
     rippleSpec: dict[str, Any] | None = Field(default=None, alias="rippleSpec")
-    visibility: str = "private"
+    visibility: str = Field(default="private", pattern="^(private|workspace|public)$")
+    share_link_token: str | None = None
+    share_link_access: str = Field(default="view", pattern="^(view|comment|edit)$")
+    shared_with: list[str] = Field(default_factory=list)  # User IDs with explicit access
 
     model_config = {"populate_by_name": True}
 

@@ -27,6 +27,7 @@ class Session(TimestampedDocument):
         default_factory=lambda: datetime.now(UTC), alias="lastActivity"
     )
     messageCount: int = Field(default=0, alias="messageCount")
+    deleted_at: datetime | None = None
 
     model_config = {"populate_by_name": True}
 

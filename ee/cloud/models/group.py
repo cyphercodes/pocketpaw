@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from beanie import Indexed
 from pydantic import BaseModel, Field
 
@@ -25,12 +27,14 @@ class Group(TimestampedDocument):
     description: str = ""
     icon: str = ""
     color: str = ""
-    type: str = "public"  # public | private
+    type: str = Field(default="public", pattern="^(public|private|dm)$")
     members: list[str] = Field(default_factory=list)  # User IDs
     agents: list[GroupAgent] = Field(default_factory=list)
     pinned_messages: list[str] = Field(default_factory=list)  # Message IDs
     owner: str  # User ID
     archived: bool = False
+    last_message_at: datetime | None = None
+    message_count: int = 0
 
     class Settings:
         name = "groups"

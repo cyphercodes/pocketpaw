@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from beanie import Indexed
 
 from ee.cloud.models.base import TimestampedDocument
@@ -23,6 +25,7 @@ class Workspace(TimestampedDocument):
     plan: str = "team"  # from license: team | business | enterprise
     seats: int = 5
     settings: WorkspaceSettings = Field(default_factory=WorkspaceSettings)
+    deleted_at: datetime | None = None
 
     class Settings:
         name = "workspaces"
