@@ -159,56 +159,61 @@ class SessionService:
 
     @staticmethod
     async def get_history(session_id: str, user_id: str) -> dict:
-        """Get session chat history from cloud Messages collection.
+        """Get session chat history.
 
-        Cloud sessions store messages in MongoDB (group chat messages),
-        not in the runtime file-based memory store.
+        Checks two sources:
+        1. MongoDB Messages collection (cloud group chat)
+        2. Runtime file-based memory (dashboard WebSocket chat)
+
+        Returns whichever has messages.
         """
         session = await SessionService._get_session(session_id, user_id)
 
-        # Session can be linked to a group — fetch messages from that group
-        group_id = session.group
-        if not group_id and session.pocket:
-            # If session is linked to a pocket but not a group,
-            # there may not be chat history yet
-            return {"messages": []}
+        # 1. Try cloud Messages (group chat)
+        if session.group:
+            try:
+                from ee.cloud.models.message import Message
 
-        if not group_id:
-            return {"messages": []}
-
-        try:
-            from ee.cloud.models.message import Message
-
-            messages = (
-                await Message.find(
-                    Message.group == group_id,
-                    Message.deleted == False,  # noqa: E711
+                messages = (
+                    await Message.find(
+                        Message.group == session.group,
+                        Message.deleted == False,  # noqa: E711
+                    )
+                    .sort("createdAt")
+                    .limit(100)
+                    .to_list()
                 )
-                .sort("createdAt")
-                .limit(100)
-                .to_list()
-            )
-
-            return {
-                "messages": [
-                    {
-                        "_id": str(m.id),
-                        "role": "assistant" if m.sender_type == "agent" else "user",
-                        "content": m.content,
-                        "sender": m.sender,
-                        "senderType": m.sender_type,
-                        "createdAt": m.createdAt.isoformat() if m.createdAt else None,
+                if messages:
+                    return {
+                        "messages": [
+                            {
+                                "_id": str(m.id),
+                                "role": "assistant" if m.sender_type == "agent" else "user",
+                                "content": m.content,
+                                "sender": m.sender,
+                                "senderType": m.sender_type,
+                                "createdAt": m.createdAt.isoformat() if m.createdAt else None,
+                            }
+                            for m in messages
+                        ]
                     }
-                    for m in messages
-                ]
-            }
+            except Exception:
+                logger.debug("Cloud message lookup failed for session %s", session.sessionId)
+
+        # 2. Try runtime file-based memory
+        try:
+            from pocketpaw.memory.manager import MemoryManager
+
+            manager = MemoryManager()
+            # Runtime uses session keys like "websocket:{chat_id}" or the sessionId directly
+            for key in [session.sessionId, f"websocket:{session.sessionId}"]:
+                entries = await manager.get_session_history(key)
+                if entries:
+                    return {"messages": entries}
         except Exception:
-            logger.warning(
-                "Failed to fetch history for session %s",
-                session.sessionId,
-                exc_info=True,
-            )
-            return {"messages": []}
+            logger.debug("Runtime memory lookup failed for session %s", session.sessionId)
+
+        return {"messages": []}
 
     # -----------------------------------------------------------------
     # Touch (activity tracking)
