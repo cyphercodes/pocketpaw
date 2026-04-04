@@ -32,7 +32,11 @@ async def ingest_text(text: str, source: str = "manual") -> RawDoc:
 
 
 async def ingest_url(url: str) -> RawDoc:
-    """Fetch URL and create RawDoc."""
+    """Fetch URL and extract clean content.
+
+    Uses trafilatura (best-in-class HTML→text/markdown extraction, F1=0.958)
+    with fallback to basic HTML stripping if not installed.
+    """
     import httpx
 
     try:
@@ -43,11 +47,20 @@ async def ingest_url(url: str) -> RawDoc:
     except Exception as exc:
         raise ValueError(f"Failed to fetch {url}: {exc}") from exc
 
-    # Strip HTML tags
-    clean = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
-    clean = re.sub(r"<style[^>]*>.*?</style>", "", clean, flags=re.DOTALL)
-    clean = re.sub(r"<[^>]+>", " ", clean)
-    clean = re.sub(r"\s+", " ", clean).strip()
+    # Try trafilatura first — strips boilerplate, preserves structure
+    clean = ""
+    try:
+        import trafilatura
+        clean = trafilatura.extract(html, output_format="markdown", include_links=True, include_tables=True) or ""
+    except ImportError:
+        pass
+
+    # Fallback: basic HTML stripping
+    if not clean:
+        clean = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
+        clean = re.sub(r"<style[^>]*>.*?</style>", "", clean, flags=re.DOTALL)
+        clean = re.sub(r"<[^>]+>", " ", clean)
+        clean = re.sub(r"\s+", " ", clean).strip()
 
     if not clean:
         raise ValueError(f"No text content extracted from {url}")
