@@ -32,13 +32,25 @@ async def get_soul_dashboard():
     state = soul.state
 
     # Identity
+    # Calculate age safely (handle naive/aware datetime mismatch)
+    age_days = 0
+    born_iso = ""
+    if hasattr(soul, "born") and soul.born:
+        born_iso = soul.born.isoformat()
+        try:
+            from datetime import UTC, datetime
+            now = datetime.now(UTC)
+            born = soul.born if soul.born.tzinfo else soul.born.replace(tzinfo=UTC)
+            age_days = (now - born).days
+        except Exception:
+            pass
+
     identity = {
         "name": soul.name,
         "archetype": getattr(soul, "archetype", ""),
         "did": getattr(soul, "did", ""),
-        "born": soul.born.isoformat() if hasattr(soul, "born") and soul.born else "",
-        "age_days": ((__import__("datetime").datetime.now(__import__("datetime").UTC) - soul.born).days
-                     if hasattr(soul, "born") and soul.born else 0),
+        "born": born_iso,
+        "age_days": age_days,
         "lifecycle": getattr(soul, "lifecycle", "active"),
         "values": list(getattr(soul, "values", [])),
         "incarnation": getattr(soul, "incarnation", 1),
