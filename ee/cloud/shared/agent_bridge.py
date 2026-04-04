@@ -179,19 +179,10 @@ async def _run_agent_response(
     try:
         from ee.cloud.agents.knowledge import KnowledgeService
         knowledge_context = await KnowledgeService.search_context(agent_id, user_message)
+        if knowledge_context:
+            logger.info("Agent bridge: injected %d chars of knowledge for agent %s", len(knowledge_context), agent_id)
     except Exception:
-        pass  # Knowledge unavailable — non-fatal
-
-    if knowledge_context:
-        # Prepend knowledge to history as a system-like context block
-        history.insert(0, {
-            "role": "user",
-            "content": f"[KNOWLEDGE CONTEXT — use this information to answer]\n\n{knowledge_context}",
-        })
-        history.insert(1, {
-            "role": "assistant",
-            "content": "I've noted the knowledge context and will use it in my response.",
-        })
+        logger.warning("Knowledge search failed for agent %s", agent_id, exc_info=True)
 
     # Notify: agent starts generating
     temp_msg_id = f"agent-stream-{agent_id}-{int(datetime.now(UTC).timestamp() * 1000)}"
@@ -212,7 +203,7 @@ async def _run_agent_response(
     # Stream response
     full_text = ""
     try:
-        async for event in pool.run(agent_id, user_message, session_key, history):
+        async for event in pool.run(agent_id, user_message, session_key, history, knowledge_context=knowledge_context):
             if event.type == "message":
                 full_text += event.content
                 await ws_manager.broadcast_to_group(

@@ -114,6 +114,7 @@ class AgentPool:
         message: str,
         session_key: str,
         history: list[dict] | None = None,
+        knowledge_context: str = "",
     ) -> AsyncIterator[Any]:
         """Run an agent on a message. Yields AgentEvent stream."""
         instance = await self.get(agent_id)
@@ -130,8 +131,18 @@ class AgentPool:
 
         # Fall back to config system_prompt or persona
         if not system_prompt:
-            system_prompt = instance.config.get("system_prompt") or instance.config.get(
-                "soul_persona", ""
+            persona = instance.config.get("soul_persona", "")
+            extra = instance.config.get("system_prompt", "")
+            system_prompt = f"{persona}\n\n{extra}".strip() if persona or extra else ""
+
+        # Inject knowledge context directly into system prompt
+        if knowledge_context:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "## Your Knowledge Base\n"
+                "Use the following information from your knowledge base to answer questions. "
+                "Always reference this data when relevant instead of making things up or using tools to search.\n\n"
+                f"{knowledge_context}"
             )
 
         async for event in instance.backend.run(
