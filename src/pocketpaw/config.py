@@ -792,7 +792,7 @@ class Settings(BaseSettings):
 
     # Soul Protocol
     soul_enabled: bool = Field(
-        default=False,
+        default=True,
         description="Enable soul-protocol for persistent AI identity, memory, and emotion",
     )
     soul_name: str = Field(
