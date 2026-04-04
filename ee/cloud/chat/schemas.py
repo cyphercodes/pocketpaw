@@ -36,7 +36,7 @@ class AddGroupMembersRequest(BaseModel):
 class AddGroupAgentRequest(BaseModel):
     agent_id: str
     role: str = "assistant"
-    respond_mode: str = "mention_only"
+    respond_mode: str = "auto"
 
 
 class UpdateGroupAgentRequest(BaseModel):
