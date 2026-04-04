@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from datetime import UTC, datetime
 
-import httpx
 from beanie import PydanticObjectId
 
 from ee.cloud.models.session import Session
@@ -19,8 +17,6 @@ from ee.cloud.shared.errors import Forbidden, NotFound
 from ee.cloud.shared.events import event_bus
 
 logger = logging.getLogger(__name__)
-
-RUNTIME_URL = os.environ.get("POCKETPAW_RUNTIME_URL", "http://localhost:8888")
 
 
 def _session_response(session: Session) -> dict:
@@ -163,21 +159,20 @@ class SessionService:
 
     @staticmethod
     async def get_history(session_id: str, user_id: str) -> dict:
-        """Proxy to Python runtime: GET {RUNTIME_URL}/api/v1/sessions/{sessionId}/history."""
+        """Get session history directly from the memory manager (in-process)."""
         session = await SessionService._get_session(session_id, user_id)
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{RUNTIME_URL}/api/v1/sessions/{session.sessionId}/history",
-                    timeout=10,
-                )
-                return resp.json()
+            from pocketpaw.memory.manager import SessionManager
+
+            manager = SessionManager()
+            return await manager.get_session_history(session.sessionId)
         except Exception:
             logger.warning(
-                "Failed to fetch history for session %s from runtime",
+                "Failed to fetch history for session %s",
                 session.sessionId,
+                exc_info=True,
             )
-            return {"messages": [], "error": "Runtime unavailable"}
+            return {"messages": [], "error": "Session history unavailable"}
 
     # -----------------------------------------------------------------
     # Touch (activity tracking)
