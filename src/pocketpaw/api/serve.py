@@ -68,15 +68,6 @@ def create_api_app():
     # --- Mount all /api/v1/ routers -------------------------------------
     mount_v1_routers(app)
 
-    # --- Mount Socket.IO for enterprise real-time group chat ----------------
-    try:
-        from ee.cloud.socketio_server import wrap_asgi_app
-        app = wrap_asgi_app(app)
-    except ImportError:
-        pass
-    except Exception:
-        logger.warning("Socket.IO wrapper failed", exc_info=True)
-
     # --- WebSocket handler helper ----------------------------------------
     async def _handle_ws(
         websocket: WebSocket,
@@ -135,6 +126,15 @@ def create_api_app():
         from pocketpaw.dashboard_lifecycle import shutdown_event
 
         await shutdown_event()
+
+    # Mount enterprise cloud module (domain routers + WebSocket + error handler)
+    try:
+        from ee.cloud import mount_cloud
+        mount_cloud(app)
+    except ImportError:
+        pass
+    except Exception:
+        logger.warning("Cloud module mount failed", exc_info=True)
 
     return app
 
